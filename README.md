@@ -275,3 +275,124 @@ If you wish to discuss pgAdmin 4, or contribute to the project, please use the
 pgAdmin Hackers mailing list:
 
 pgadmin-hackers@postgresql.org
+
+---
+
+## pgAdmin 4 Vim Mode (Windows)
+
+This fork adds Vim keybindings to the Query Tool SQL editor through
+CodeMirror 6 and `@replit/codemirror-vim`.
+
+### 1. Create the Python environment with uv
+
+Open PowerShell in the repository root:
+
+```powershell
+cd D:\pgadmin_vim
+uv venv --python 3.13 .venv
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+```
+
+If `passlib` reports that `pkg_resources` is missing, install the compatible
+setuptools version:
+
+```powershell
+uv pip install --python .venv\Scripts\python.exe --reinstall setuptools==81.0.0
+```
+
+The PostgreSQL `bin` directory must be available when Python packages that
+depend on `pg_config` are installed.
+
+### 2. Build the frontend
+
+The Vim code is compiled into the generated frontend bundles. Install the
+JavaScript dependencies and build from the `web` directory:
+
+```powershell
+cd D:\pgadmin_vim\web
+corepack enable
+corepack yarn install
+corepack yarn bundle
+```
+
+After a successful build, the main Query Tool bundle is generated at:
+
+```text
+D:\pgadmin_vim\web\pgadmin\static\js\generated\sqleditor.js
+```
+
+The generated directory is ignored by Git and can always be recreated with
+`corepack yarn bundle`.
+
+### 3. Configure the Desktop Runtime
+
+Install the Electron runtime dependencies once:
+
+```powershell
+cd D:\pgadmin_vim\runtime
+corepack yarn install
+```
+
+Create `runtime\dev_config.json` from `runtime\dev_config.json.in` and set
+the paths to the local uv Python interpreter and pgAdmin entry point:
+
+```json
+{
+    "pythonPath": "D:/pgadmin_vim/.venv/Scripts/python.exe",
+    "pgadminFile": "D:/pgadmin_vim/web/pgAdmin4.py"
+}
+```
+
+This file contains machine-specific paths and is intentionally excluded from
+version control. Create it separately on each computer.
+
+### 4. Start pgAdmin with Vim support
+
+From the repository root, double-click `start-pgadmin-vim.cmd`, or run:
+
+```powershell
+cd D:\pgadmin_vim\runtime
+corepack yarn start
+```
+
+The Desktop Runtime normally uses port `5050`. Close another running pgAdmin
+instance before starting this development runtime.
+
+### 5. Enable Vim mode
+
+In pgAdmin, open:
+
+```text
+File → Preferences → Query Tool → Editor
+```
+
+Enable:
+
+- `Enable Vim mode?`
+- `Show Vim mode indicator?` (optional)
+
+Reopen the Query Tool if necessary. Common commands include:
+
+```text
+i       Insert mode
+Esc     Normal mode
+h j k l Move the cursor
+dd      Delete a line
+yy      Yank a line
+p       Paste
+u       Undo
+gg / G  Start / end of document
+```
+
+### 6. Rebuild after changing Vim code
+
+After editing the React or Query Tool source files, rebuild the frontend:
+
+```powershell
+cd D:\pgadmin_vim\web
+corepack yarn bundle
+```
+
+Then restart pgAdmin Desktop Runtime. Building the complete Windows installer
+is separate and requires the full Windows packaging prerequisites, including
+Inno Setup; it is not required for local development or testing.
