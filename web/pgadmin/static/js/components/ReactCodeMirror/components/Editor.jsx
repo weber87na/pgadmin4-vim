@@ -45,6 +45,7 @@ import syntaxHighlighting from '../extensions/highlighting';
 import PgSQL from '../extensions/dialect';
 import { sql } from '@codemirror/lang-sql';
 import { json } from '@codemirror/lang-json';
+import { vim } from '@replit/codemirror-vim';
 import errorMarkerExtn from '../extensions/errorMarker';
 import CustomEditorView from '../CustomEditorView';
 import breakpointGutter, { breakpointEffect } from '../extensions/breakpointGutter';
@@ -167,7 +168,7 @@ export default function Editor({
   currEditor, name, value, options, onCursorActivity, onChange, readonly,
   disabled, autocomplete = false, autocompleteOnKeyPress, breakpoint = false, onBreakPointChange,
   showActiveLine=false, keepHistory = true, cid, helpid, labelledBy,
-  customKeyMap, language='pgsql'
+  customKeyMap, language='pgsql', vimMode=false, vimShowStatus=true
 }) {
   const checkIsMounted = useIsMounted();
 
@@ -186,6 +187,7 @@ export default function Editor({
   const shortcuts = useRef(new Compartment());
   const configurables = useRef(new Compartment());
   const editableConfig = useRef(new Compartment());
+  const vimModeCompartment = useRef(new Compartment());
 
   useEffect(() => {
     if (!checkIsMounted()) return;
@@ -199,6 +201,9 @@ export default function Editor({
     if (editorContainerRef.current) {
       const state = EditorState.create({
         extensions: [
+          // Vim must be declared before the other keymaps so that it owns
+          // Normal/Visual mode while leaving Insert mode to CodeMirror.
+          vimModeCompartment.current.of([]),
           ...finalExtns,
           eolCompartment.of([eol.of(osEOL)]),
           shortcuts.current.of([]),
@@ -416,9 +421,14 @@ export default function Editor({
     }
 
     editor.current.dispatch({
-      effects: configurables.current.reconfigure(newConfigExtn)
+      effects: [
+        configurables.current.reconfigure(newConfigExtn),
+        vimModeCompartment.current.reconfigure(
+          vimMode ? vim({ status: vimShowStatus }) : []
+        ),
+      ]
     });
-  }, [preferencesStore]);
+  }, [preferencesStore, vimMode, vimShowStatus]);
 
   useMemo(() => {
     if (!checkIsMounted()) return;
@@ -466,4 +476,6 @@ Editor.propTypes = {
   labelledBy: PropTypes.string,
   customKeyMap: PropTypes.array,
   language: PropTypes.string,
+  vimMode: PropTypes.bool,
+  vimShowStatus: PropTypes.bool,
 };

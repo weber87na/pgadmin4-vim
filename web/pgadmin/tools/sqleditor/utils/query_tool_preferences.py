@@ -12,7 +12,7 @@ import config
 from flask_babel import gettext
 from pgadmin.utils.constants import PREF_LABEL_DISPLAY, \
     PREF_LABEL_KEYBOARD_SHORTCUTS, PREF_LABEL_EXPLAIN, PREF_LABEL_OPTIONS, \
-    PREF_LABEL_CSV_TXT, PREF_LABEL_RESULTS_GRID, \
+    PREF_LABEL_EDITOR, PREF_LABEL_CSV_TXT, PREF_LABEL_RESULTS_GRID, \
     PREF_LABEL_GRAPH_VISUALISER, PREF_LABEL_GEOMETRY_VIEWER
 from pgadmin.utils import SHORTCUT_FIELDS as shortcut_fields
 from config import DATA_RESULT_ROWS_PER_PAGE
@@ -206,6 +206,26 @@ def register_query_tool_preferences(self):
         help_str=gettext(
             'Specifies whether or not to copy SQL to the Query Tool from '
             'the main window.'
+        )
+    )
+
+    self.vim_mode = self.preference.register(
+        'Editor', 'vim_mode',
+        gettext("Enable Vim mode?"), 'boolean', False,
+        category_label=PREF_LABEL_EDITOR,
+        help_str=gettext(
+            'Enable Vim keybindings in the main Query Tool SQL editor. '
+            'Changes take effect immediately.'
+        )
+    )
+
+    self.vim_show_status = self.preference.register(
+        'Editor', 'vim_show_status',
+        gettext("Show Vim mode indicator?"), 'boolean', True,
+        category_label=PREF_LABEL_EDITOR,
+        help_str=gettext(
+            'Show the current Vim mode, such as --NORMAL-- or --INSERT--, '
+            'below the Query Tool SQL editor.'
         )
     )
 

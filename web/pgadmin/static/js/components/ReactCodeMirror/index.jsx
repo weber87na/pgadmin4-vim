@@ -63,7 +63,8 @@ CopyButton.propTypes = {
 };
 
 
-export default function CodeMirror({className, currEditor, showCopyBtn=false, customKeyMap=[], onTextSelect, ...props}) {
+export default function CodeMirror({className, currEditor, showCopyBtn=false, customKeyMap=[], onTextSelect,
+  vimMode=false, vimShowStatus=true, ...props}) {
   const editor = useRef();
   const [[showFind, isReplace, findKey], setShowFind] = useState([false, false, false]);
   const [showGoto, setShowGoto] = useState(false);
@@ -193,7 +194,8 @@ export default function CodeMirror({className, currEditor, showCopyBtn=false, cu
 
   return (
     <Root className={[className].join(' ')} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} >
-      <Editor currEditor={currEditorWrap} customKeyMap={finalCustomKeyMap} {...props} />
+      <Editor currEditor={currEditorWrap} customKeyMap={finalCustomKeyMap}
+        vimMode={vimMode} vimShowStatus={vimShowStatus} {...props} />
       {showCopy && <CopyButton editor={editor.current} />}
       <FindDialog key={findKey} editor={editor.current} show={showFind} replace={isReplace} onClose={closeFind} />
       <GotoDialog editor={editor.current} show={showGoto} onClose={closeGoto} />
@@ -207,4 +209,6 @@ CodeMirror.propTypes = {
   showCopyBtn: PropTypes.bool,
   customKeyMap: PropTypes.array,
   onTextSelect:PropTypes.func,
+  vimMode: PropTypes.bool,
+  vimShowStatus: PropTypes.bool,
 };

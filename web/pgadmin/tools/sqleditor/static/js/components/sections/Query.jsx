@@ -527,6 +527,8 @@ export default function Query({onTextSelect, setQtStatePartial}) {
     autocomplete={true}
     customKeyMap={shortcutOverrideKeys}
     onTextSelect={onTextSelect}
+    vimMode={queryToolCtx.preferences?.sqleditor?.vim_mode ?? false}
+    vimShowStatus={queryToolCtx.preferences?.sqleditor?.vim_show_status ?? true}
     disabled={queryToolCtx.editor_disabled}
   />;
 }
