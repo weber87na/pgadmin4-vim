@@ -456,9 +456,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"electron@npm:^43.4.0":
-  version: 43.4.0
-  resolution: "electron@npm:43.4.0"
+"electron@npm:^43.4.1":
+  version: 43.4.1
+  resolution: "electron@npm:43.4.1"
   dependencies:
     "@electron-internal/extract-zip": "npm:^1.0.1"
     "@electron/get": "npm:^5.0.0"
@@ -466,7 +466,7 @@ __metadata:
   bin:
     electron: cli.js
     install-electron: install.js
-  checksum: 10c0/8b03553d1a5d186d4d95f80195ff634f6afd4ea9db7e09fdc67f251f93e7e2447da9a233e05281289450335ad8a01630609ffb5f3467ab38e71b65be489c9342
+  checksum: 10c0/28e566ecd2dd37bda0a64eb9fecd12d23973952bcd15df993948fc7d4d434e4a068b674f486aea1cb39bfba1f9dbfdf51e94b45b2da31ad0861fbff8c2d3d7e7
   languageName: node
   linkType: hard
 
@@ -579,9 +579,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eslint@npm:^10.8.1":
-  version: 10.8.1
-  resolution: "eslint@npm:10.8.1"
+"eslint@npm:^10.9.0":
+  version: 10.9.0
+  resolution: "eslint@npm:10.9.0"
   dependencies:
     "@eslint-community/eslint-utils": "npm:^4.8.0"
     "@eslint-community/regexpp": "npm:^4.12.2"
@@ -620,7 +620,7 @@ __metadata:
       optional: true
   bin:
     eslint: bin/eslint.js
-  checksum: 10c0/0c4720a43ef2052829db18e37aa79adb5f0a62137bdf4a4f8e9507bbbbf888ba0669fc03e4b7139d8f27b59b051bbbcd0a3988b068c30fa934a766d60a81f599
+  checksum: 10c0/bc6c9f4a5c0b97e37ab1aa1753ae30ad5b0cf43a25ca3dcfff937f2b47243654c3ca34e37f71006474a3c1b95d6d4e046149facc6d66af4af6e993a619c23509
   languageName: node
   linkType: hard
 
@@ -1132,10 +1132,10 @@ __metadata:
   dependencies:
     "@eslint/js": "npm:^10.0.1"
     axios: "npm:^1.19.0"
-    electron: "npm:^43.4.0"
+    electron: "npm:^43.4.1"
     electron-context-menu: "npm:^4.1.2"
     electron-store: "npm:^11.0.2"
-    eslint: "npm:^10.8.1"
+    eslint: "npm:^10.9.0"
     eslint-plugin-unused-imports: "npm:^4.4.1"
     globals: "npm:^17.11.0"
   languageName: unknown
