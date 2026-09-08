@@ -1,0 +1,64 @@
+name: Vim editor regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/pgadmin/static/js/components/ReactCodeMirror/**'
+      - 'web/pgadmin/tools/sqleditor/static/js/components/sections/Query.jsx'
+      - 'web/regression/javascript/components/CodeMirror*'
+      - 'web/package.json'
+      - 'web/yarn.lock'
+      - '.github/workflows/vim-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web/pgadmin/static/js/components/ReactCodeMirror/**'
+      - 'web/pgadmin/tools/sqleditor/static/js/components/sections/Query.jsx'
+      - 'web/regression/javascript/components/CodeMirror*'
+      - 'web/package.json'
+      - 'web/yarn.lock'
+      - '.github/workflows/vim-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vim-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vim-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - run: corepack enable
+      - run: corepack yarn install --immutable
+      - name: Check Vim and editor JavaScript style
+        run: >-
+          corepack yarn eslint -c .eslintrc.js
+          pgadmin/static/js/components/ReactCodeMirror/components/Editor.jsx
+          pgadmin/static/js/components/ReactCodeMirror/extensions/vim*.js
+          pgadmin/tools/sqleditor/static/js/components/sections/Query.jsx
+          regression/javascript/components/CodeMirrorVim*.spec.js
+      - name: Run Vim and editor regression tests
+        run: >-
+          corepack yarn jest --runInBand --runTestsByPath
+          regression/javascript/components/CodeMirrorVimCore.spec.js
+          regression/javascript/components/CodeMirrorVimStatus.spec.js
+          regression/javascript/components/CodeMirrorVimFolding.spec.js
+          regression/javascript/components/CodeMirrorVimSurround.spec.js
+          regression/javascript/components/CodeMirrorVimIntegration.spec.js
+          regression/javascript/components/CodeMirror.spec.js
+          regression/javascript/components/CodeMirrorCustomEditor.spec.js

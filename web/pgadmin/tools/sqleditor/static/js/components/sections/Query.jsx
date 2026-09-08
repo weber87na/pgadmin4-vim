@@ -60,6 +60,9 @@ async function registerAutocomplete(editor, api, transId) {
 export default function Query({onTextSelect, setQtStatePartial}) {
   const editor = React.useRef();
   const eventBus = useContext(QueryToolEventsContext);
+  const saveVimQuery = useCallback(() => {
+    eventBus.fireEvent(QUERY_TOOL_EVENTS.TRIGGER_SAVE_FILE);
+  }, [eventBus]);
   const queryToolCtx = useContext(QueryToolContext);
   const layoutDocker = useContext(LayoutDockerContext);
   const lastCursorPos = React.useRef();
@@ -529,6 +532,7 @@ export default function Query({onTextSelect, setQtStatePartial}) {
     onTextSelect={onTextSelect}
     vimMode={queryToolCtx.preferences?.sqleditor?.vim_mode ?? false}
     vimShowStatus={queryToolCtx.preferences?.sqleditor?.vim_show_status ?? true}
+    onVimSave={saveVimQuery}
     disabled={queryToolCtx.editor_disabled}
   />;
 }
