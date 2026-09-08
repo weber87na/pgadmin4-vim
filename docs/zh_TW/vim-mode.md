@@ -20,7 +20,7 @@
 ## 功能盤點
 
 「既有」表示由鎖定版本的 Vim 引擎提供；「第一批」已在 PR #21 合併；
-「第二批」與「第三批」已在 PR #22 合併；「第四批」加入摺疊跳轉。
+「第二批」與「第三批」已在 PR #22 合併；「第四批」加入摺疊跳轉，「第五批」加入變更清單。
 Surround 是外掛式擴充，不列為原生 Vim 功能。
 
 | 類別 | 主要指令 | 狀態 |
@@ -46,6 +46,7 @@ Surround 是外掛式擴充，不列為原生 Vim 功能。
 | Ex 範圍摺疊 | `:foldopen[!]`、`:foldclose[!]` | 第三批新增 |
 | 顯示游標／重算摺疊 | `zv zx zX` | 第三批新增 |
 | 摺疊跳轉 | `[z ]z zj zk` | 第四批新增 |
+| 變更清單 | `g;`、`g,`、`:changes` | 第五批新增 |
 | 整行複製／搬移 | `:copy`／`:co`／`:t`、`:move`／`:m` | 第二批新增 |
 | 排序 | `:sort u`、`:sort n` | 既有；第二批新增回歸覆蓋 |
 | 條件批次編輯 | `:g/pattern/d`、`:v/pattern/d` | 既有；第二批新增回歸覆蓋 |
@@ -198,6 +199,34 @@ dzj     刪除至下一個區塊起點之前
 摺疊範圍外，`]z` 會停在隱藏範圍的最後一行，而非 `END` 行。
 這些指令不等同獨立的 SQL 函式／語句文字物件。
 
+### 變更位置清單（第五批）
+
+| 指令 | 功能 | 已驗證 |
+| --- | --- | --- |
+| `g;` | 跳到較舊的變更位置，首次跳至最新變更 | 次數、最舊邊界、復原後位置 |
+| `g,` | 跳到較新的變更位置 | 次數、最新邊界、瀏覽途中再次編輯 |
+| `:changes` | 顯示目前編輯器的變更清單 | 行號、欄位、文字預覽、目前位置 `>` |
+
+```text
+3g;       往回走訪三個變更位置
+2g,       往前走訪兩個變更位置
+:changes  查看清單；第一欄是與目前索引的距離
+```
+
+每個編輯器最多保留 100 個位置；同一行、相距小於 79 個 UTF-16 單位的相鄰
+變更會合併，避免每輸入一個字元就增加一筆。這是目前固定的合併規則，尚未連動
+Vim 的 `textwidth`／`wrapmargin`，也不採用原生 Vim 的位元組欄位計算。
+
+- 記錄帶有編輯事件的輸入、刪除、貼上與 Ex 行操作；純游標移動不新增紀錄。
+- 插入／刪除會映射既有位置；復原／重做不新增紀錄，但保留並更新清單。
+  原位置被刪除時可能落到刪除範圍邊界，沒有獨立還原位置的歷史。
+- 超出次數時停在最舊／最新的有效位置；空清單或無法繼續時顯示提示。
+- `g;`／`g,` 是 Normal 模式指令，不是可配合 `d/y/c` 的 motion。
+- 切換模式指示列不清空清單；載入另一份 SQL、關閉再開啟 Vim 或銷毀編輯器會清空。
+- `:changes` 的行號從 1 開始、欄位從 0 開始；每行預覽最多 120 個 UTF-16 單位。
+  唯讀模式可瀏覽既有清單，SQL 文字以純文字顯示。
+- 尚未提供 `:keepjumps` 修飾詞、跨分頁共享清單或清單持久化。
+
 ### 整行複製與搬移
 
 ```text
@@ -264,7 +293,7 @@ Query Tool 的儲存 SQL 檔案流程；尚未命名的分頁會使用原有儲�
   及完整 Vim 外掛 API 尚未支援。EasyMotion 是外掛功能，亦未加入。
 - `zf/zd` 手動建立／刪除摺疊，以及 Vim 摺疊選項尚未實作。
   Visual 模式目前支援 `zc/zo/zC/zO`，尚未加入 Visual `za/zA`。
-- `g;`／`g,` 變更清單、Visual `g Ctrl+a`／`g Ctrl+x` 遞增序列仍待實作。
+- Visual `g Ctrl+a`／`g Ctrl+x` 遞增序列仍待實作。
   既有 Normal `Ctrl+a`／`Ctrl+x` 使用 JavaScript Number；不保證大整數及所有
   `nrformats` 行為與原生 Vim 一致。
 - Ex 解析仍由現有引擎提供；未宣稱完整 Vim 地址、正規表示式、Vimscript 或外部 shell 相容。
@@ -276,7 +305,7 @@ Query Tool 的儲存 SQL 檔案流程；尚未命名的分頁會使用原有儲�
 
 | 功能 | 目前狀態 | 尚需處理 |
 | --- | --- | --- |
-| 變更清單 `g;`／`g,`、`:changes` | 未實作 | 每個編輯器的變更位置紀錄、插入合併與位置映射 |
+| 變更清單完整原生選項 | 基本指令已實作 | `textwidth`／`wrapmargin`、`:keepjumps` 與持久化 |
 | Visual `Ctrl+a/x`、`g Ctrl+a/x` | 未補齊 | 選取內數字操作、逐行序列、區塊選取與重播 |
 | 原生數字格式與大整數 | 部分相容 | 現有引擎使用 Number；需補足精確整數及格式設定 |
 | 手動摺疊 `zf/zF/zd/zD/zE` | 未實作 | 獨立保存手動範圍、修改後映射、與語法摺疊協調 |
@@ -292,7 +321,7 @@ Query Tool 的儲存 SQL 檔案流程；尚未命名的分頁會使用原有儲�
 
 ```powershell
 corepack yarn install --immutable
-corepack yarn jest --runInBand --runTestsByPath regression/javascript/components/CodeMirrorVimCore.spec.js regression/javascript/components/CodeMirrorVimStatus.spec.js regression/javascript/components/CodeMirrorVimFolding.spec.js regression/javascript/components/CodeMirrorVimExLines.spec.js regression/javascript/components/CodeMirrorVimSurround.spec.js regression/javascript/components/CodeMirrorVimIntegration.spec.js regression/javascript/components/CodeMirror.spec.js regression/javascript/components/CodeMirrorCustomEditor.spec.js
+corepack yarn jest --runInBand --runTestsByPath regression/javascript/components/CodeMirrorVimCore.spec.js regression/javascript/components/CodeMirrorVimChanges.spec.js regression/javascript/components/CodeMirrorVimStatus.spec.js regression/javascript/components/CodeMirrorVimFolding.spec.js regression/javascript/components/CodeMirrorVimExLines.spec.js regression/javascript/components/CodeMirrorVimSurround.spec.js regression/javascript/components/CodeMirrorVimIntegration.spec.js regression/javascript/components/CodeMirror.spec.js regression/javascript/components/CodeMirrorCustomEditor.spec.js
 corepack yarn bundle
 ```
 

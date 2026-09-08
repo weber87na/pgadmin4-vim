@@ -295,7 +295,8 @@ export default class CustomEditorView extends EditorView {
       }).doc;
     }
     this.dispatch({
-      changes: { from: 0, to: this.getValue().length, insert: newValue }
+      changes: { from: 0, to: this.getValue().length, insert: newValue },
+      userEvent: 'document.replace'
     });
   }
 

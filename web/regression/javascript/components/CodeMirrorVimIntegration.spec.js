@@ -277,4 +277,25 @@ describe('Query editor Vim integration', () => {
     expect(editor.view.getValue()).toBe(sql);
   });
 
+  it('retains the change list across preferences and resets it when loading another query', () => {
+    const editor = mountEditor();
+    keys(editor.view, ['x', '2', 'G', 'x']);
+    editor.rerender({vimShowStatus: false});
+    keys(editor.view, ['2', 'g', ';']);
+    expect(editor.view.state.selection.main.head).toBe(0);
+    editor.rerender({value: 'SELECT another;'});
+    keys(editor.view, ['g', ';']);
+    expect(editor.view.dom.textContent).toContain('Change list is empty');
+    expect(editor.view.getValue()).toBe('SELECT another;');
+  });
+
+  it('records Ex copy edits in the Query Tool change list', () => {
+    const editor = mountEditor();
+    ex(editor.view, '1copy $');
+    keys(editor.view, ['g', 'g', 'g', ';']);
+    expect(editor.view.state.selection.main.head).toBeGreaterThan(0);
+    ex(editor.view, 'changes');
+    expect(editor.view.dom.querySelector('pre').textContent).toContain('SELECT');
+  });
+
 });
