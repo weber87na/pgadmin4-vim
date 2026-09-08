@@ -55,11 +55,17 @@ import { autoCompleteCompartment, eolCompartment, indentNewLine, eol } from '../
 import { OS_EOL } from '../../../../../tools/sqleditor/static/js/components/QueryToolConstants';
 import { useTheme } from '@mui/material';
 import plpgsqlFoldService from '../extensions/plpgsqlFoldService';
+import vimStatus from '../extensions/vimStatus';
+import vimFolding from '../extensions/vimFolding';
+import vimSurround from '../extensions/vimSurround';
+import vimSave from '../extensions/vimSave';
+import vimKeys from '../extensions/vimKeys';
 
 const arrowRightHtml = ReactDOMServer.renderToString(<KeyboardArrowRightRoundedIcon style={{width: '16px', fill: 'currentcolor'}} />);
 const arrowDownHtml = ReactDOMServer.renderToString(<ExpandMoreRoundedIcon style={{width: '16px', fill: 'currentcolor'}} />);
 
 function handleDrop(e, editor) {
+  if (editor.state.readOnly || !editor.state.facet(EditorView.editable)) return true;
   let dropDetails = null;
   try {
     dropDetails = JSON.parse(e.dataTransfer.getData('text'));
@@ -103,6 +109,7 @@ function handlePaste(e) {
 }
 
 function insertTabWithUnit({ state, dispatch }) {
+  if (state.readOnly) return false;
   if (state.selection.ranges.some(r => !r.empty))
     return indentMore({ state, dispatch });
 
@@ -168,7 +175,7 @@ export default function Editor({
   currEditor, name, value, options, onCursorActivity, onChange, readonly,
   disabled, autocomplete = false, autocompleteOnKeyPress, breakpoint = false, onBreakPointChange,
   showActiveLine=false, keepHistory = true, cid, helpid, labelledBy,
-  customKeyMap, language='pgsql', vimMode=false, vimShowStatus=true
+  customKeyMap, language='pgsql', vimMode=false, vimShowStatus=true, onVimSave
 }) {
   const checkIsMounted = useIsMounted();
 
@@ -181,6 +188,7 @@ export default function Editor({
   };
 
   const preferencesStore = usePreferences();
+  const vimFoldEnabled = preferencesStore.getPreferencesForModule('editor').code_folding ?? true;
   const theme = useTheme();
   const editable = !disabled;
 
@@ -210,7 +218,7 @@ export default function Editor({
           configurables.current.of([]),
           editableConfig.current.of([
             EditorView.editable.of(!disabled),
-            EditorState.readOnly.of(readonly),
+            EditorState.readOnly.of(!!readonly || !!disabled),
           ].concat(keepHistory ? [history()] : [])),
           [EditorView.updateListener.of(function(update) {
             if(update.selectionSet) {
@@ -421,14 +429,23 @@ export default function Editor({
     }
 
     editor.current.dispatch({
-      effects: [
-        configurables.current.reconfigure(newConfigExtn),
-        vimModeCompartment.current.reconfigure(
-          vimMode ? vim({ status: vimShowStatus }) : []
-        ),
-      ]
+      effects: configurables.current.reconfigure(newConfigExtn),
     });
-  }, [preferencesStore, vimMode, vimShowStatus]);
+  }, [preferencesStore]);
+
+  useEffect(() => {
+    if (!checkIsMounted()) return;
+    editor.current?.dispatch({
+      effects: vimModeCompartment.current.reconfigure(vimMode ? [
+        vim({status: true}),
+        vimKeys,
+        vimStatus(vimShowStatus),
+        vimFolding(vimFoldEnabled),
+        vimSurround(),
+        vimSave(onVimSave),
+      ] : []),
+    });
+  }, [vimMode, vimShowStatus, vimFoldEnabled, onVimSave]);
 
   useMemo(() => {
     if (!checkIsMounted()) return;
@@ -446,7 +463,7 @@ export default function Editor({
     editor.current?.dispatch({
       effects: editableConfig.current.reconfigure([
         EditorView.editable.of(editable),
-        EditorState.readOnly.of(readonly),
+        EditorState.readOnly.of(!!readonly || !!disabled),
       ].concat(keepHistory ? [history()] : []))
     });
   }, [readonly, disabled, keepHistory]);
@@ -478,4 +495,5 @@ Editor.propTypes = {
   language: PropTypes.string,
   vimMode: PropTypes.bool,
   vimShowStatus: PropTypes.bool,
+  onVimSave: PropTypes.func,
 };

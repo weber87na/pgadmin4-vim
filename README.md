@@ -280,6 +280,10 @@ pgadmin-hackers@postgresql.org
 
 ## pgAdmin 4 Vim Mode (Windows)
 
+繁體中文：[Vim 功能盤點與操作說明](docs/zh_TW/vim-mode.md)。
+本分支新增 surround、`zc`／`zo`／`za`／`zM`／`zR` 摺疊及 `:w` 儲存整合，
+並修復模式指示列切換與唯讀／停用狀態的操作問題。
+
 This fork adds Vim keybindings to the Query Tool SQL editor through
 CodeMirror 6 and `@replit/codemirror-vim`.
 
