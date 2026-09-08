@@ -9,6 +9,7 @@
 
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { EditorView } from '@codemirror/view';
+import { foldedRanges } from '@codemirror/language';
 import { getCM, Vim } from '@replit/codemirror-vim';
 import CodeMirror from 'sources/components/ReactCodeMirror';
 import usePreferences from 'pgadmin.preferences/store';
@@ -258,6 +259,22 @@ describe('Query editor Vim integration', () => {
     editor.rerender({[property]: false});
     ex(editor.view, '1t $');
     expect(editor.view.getValue()).toBe('SELECT 1;\nSELECT 2;\nSELECT 1;');
+  });
+
+  it.each([false, true])('uses Visual and Ex folds in a Query Tool editor with readonly=%s', readonly => {
+    const sql = 'BEGIN\n  SELECT 1;\n  SELECT 2;\nEND;';
+    const editor = mountEditor({value: sql, readonly});
+    keys(editor.view, ['V', '3', 'G', 'z', 'c']);
+    expect(foldedRanges(editor.view.state).size).toBe(1);
+    expect(getCM(editor.view).state.vim.visualMode).toBe(false);
+    editor.rerender({vimShowStatus: false});
+    ex(editor.view, '%foldopen!');
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+    ex(editor.view, '%foldclose!');
+    expect(foldedRanges(editor.view.state).size).toBe(1);
+    keys(editor.view, ['z', 'v']);
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+    expect(editor.view.getValue()).toBe(sql);
   });
 
 });
