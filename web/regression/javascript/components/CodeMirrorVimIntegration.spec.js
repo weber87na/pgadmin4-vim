@@ -277,4 +277,39 @@ describe('Query editor Vim integration', () => {
     expect(editor.view.getValue()).toBe(sql);
   });
 
+  it('retains the change list across preferences and resets it when loading another query', () => {
+    const editor = mountEditor();
+    keys(editor.view, ['x', '2', 'G', 'x']);
+    editor.rerender({vimShowStatus: false});
+    keys(editor.view, ['2', 'g', ';']);
+    expect(editor.view.state.selection.main.head).toBe(0);
+    editor.rerender({value: 'SELECT another;'});
+    keys(editor.view, ['g', ';']);
+    expect(editor.view.dom.textContent).toContain('Change list is empty');
+    expect(editor.view.getValue()).toBe('SELECT another;');
+  });
+
+  it('records Ex copy edits in the Query Tool change list', () => {
+    const editor = mountEditor();
+    ex(editor.view, '1copy $');
+    keys(editor.view, ['g', 'g', 'g', ';']);
+    expect(editor.view.state.selection.main.head).toBeGreaterThan(0);
+    ex(editor.view, 'changes');
+    expect(editor.view.dom.querySelector('pre').textContent).toContain('SELECT');
+  });
+
+  it('retains temporary fold snapshots across preferences and clears them on query replacement', () => {
+    const sql = 'BEGIN\n  SELECT 1;\n  SELECT 2;\nEND;';
+    const editor = mountEditor({value: sql});
+    keys(editor.view, ['z', 'M', 'z', 'n']);
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+    editor.rerender({vimShowStatus: false});
+    keys(editor.view, ['z', 'N']);
+    expect(foldedRanges(editor.view.state).size).toBe(1);
+    keys(editor.view, ['z', 'n']);
+    editor.rerender({value: sql + '\nSELECT 3;'});
+    keys(editor.view, ['z', 'N']);
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+  });
+
 });
