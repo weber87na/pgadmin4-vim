@@ -9,6 +9,7 @@
 
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { history } from '@codemirror/commands';
 import { json } from '@codemirror/lang-json';
 import { codeFolding, foldedRanges } from '@codemirror/language';
 import { getCM, Vim, vim } from '@replit/codemirror-vim';
@@ -35,7 +36,7 @@ describe('Vim folding', () => {
   }
 
   function keys(view, input) {
-    for (const key of input) Vim.handleKey(getCM(view), key, 'user');
+    for (const key of input.match(/<[^>]+>|./g) || []) Vim.handleKey(getCM(view), key, 'user');
   }
 
   function folds(view) {
@@ -200,4 +201,250 @@ describe('Vim folding', () => {
     keys(view, 'za');
     expect(folds(view)).toHaveLength(0);
   });
+  it('zC closes enclosing folds without closing an unrelated sibling', () => {
+    const view = create({selection: {anchor: documentText.indexOf('"value"')}});
+    keys(view, 'zC');
+    expect(folds(view)).toHaveLength(2);
+    keys(view, 'zo');
+    expect(folds(view).map(range => view.state.doc.lineAt(range.from).number)).toEqual([2]);
+  });
+  it('zO recursively opens a subtree and leaves other subtrees closed', () => {
+    const view = create();
+    keys(view, 'zMzo');
+    view.dispatch({selection: {anchor: view.state.doc.line(2).from}});
+    keys(view, 'zO');
+    expect(folds(view).map(range => view.state.doc.lineAt(range.from).number)).toEqual([5]);
+    keys(view, 'ggzMzO');
+    expect(folds(view)).toHaveLength(0);
+  });
+  it('zA recursively toggles the current subtree', () => {
+    const view = create();
+    keys(view, 'zA');
+    expect(folds(view)).toHaveLength(3);
+    keys(view, 'zA');
+    expect(folds(view)).toHaveLength(0);
+    view.dispatch({selection: {anchor: view.state.doc.line(2).from}});
+    keys(view, 'zA');
+    expect(folds(view).map(range => view.state.doc.lineAt(range.from).number)).toEqual([2]);
+  });
+  it('zm and zr adjust nesting levels with counts', () => {
+    const view = create();
+    for (const [command, count] of [['zm', 2], ['zm', 3], ['zr', 2], ['zr', 0], ['2zm', 3], ['2zr', 0], ['9zr', 0], ['zm', 0], ['zM', 3]]) {
+      keys(view, command);
+      expect(folds(view)).toHaveLength(count);
+    }
+  });
+  it('zM and zR reset levels and level commands reset manual overrides', () => {
+    const view = create();
+    for (const [command, count] of [['zMzr', 2], ['zRzm', 2], ['zc', 3], ['zr', 0]]) {
+      keys(view, command);
+      expect(folds(view)).toHaveLength(count);
+    }
+  });
+  it('keeps fold levels local to each editor', () => {
+    const first = create();
+    const second = create();
+    keys(first, 'zM');
+    keys(second, 'zm');
+    keys(first, 'zr');
+    expect(folds(first)).toHaveLength(2);
+    expect(folds(second)).toHaveLength(2);
+  });
+  it('supports read-only documents and obeys folding preferences', () => {
+    const readonly = create({extensions: [json(), vim(), vimFolding(), EditorState.readOnly.of(true)]});
+    const disabled = create({extensions: [json(), vim(), vimFolding(false)]});
+    keys(readonly, 'zA');
+    expect(folds(readonly)).toHaveLength(3);
+    keys(readonly, 'zO');
+    expect(folds(readonly)).toHaveLength(0);
+    keys(disabled, 'zCzAzm');
+    expect(folds(disabled)).toHaveLength(0);
+    expect(readonly.state.doc.toString()).toBe(documentText);
+  });
+
+  const ex = (view, command) => Vim.handleEx(getCM(view), command);
+  const foldLines = view => folds(view).map(range => view.state.doc.lineAt(range.from).number);
+
+  it.each(['2GV4Gzc', '4GV2Gzc', '2Gv4Gzc', '2G<C-v>4Gzc'])('folds selected lines with %s and leaves siblings open', input => {
+    const view = create();
+    keys(view, input);
+    expect(foldLines(view)).toEqual([2]);
+    expect(getCM(view).state.vim.visualMode).toBe(false);
+    expect(view.state.selection.main.empty).toBe(true);
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('closes one visible level across several selected blocks', () => {
+    const view = create();
+    keys(view, '2GV7Gzc');
+    expect(foldLines(view)).toEqual([2, 5]);
+    keys(view, 'ggVGzc');
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+  });
+
+  it('single-level visual folding does not close hidden children', () => {
+    const view = create();
+    keys(view, 'ggVGzc');
+    expect(foldLines(view)).toEqual([1]);
+    keys(view, 'Vzo');
+    expect(foldLines(view)).toEqual([]);
+  });
+
+  it('visual zo opens only one level while zO opens all selected closed levels', () => {
+    const view = create();
+    keys(view, 'zMVzo');
+    expect(foldLines(view)).toEqual([2, 5]);
+    keys(view, 'ggzMVzO');
+    expect(foldLines(view)).toEqual([]);
+  });
+
+  it('visual zO opens only selected subtrees', () => {
+    const view = create();
+    keys(view, 'zMzo2GVzO');
+    expect(foldLines(view)).toEqual([5]);
+  });
+
+  it('recursive visual close includes partially selected parents without closing siblings', () => {
+    const view = create();
+    keys(view, '2GV3GzC');
+    expect(foldLines(view)).toEqual([1, 2]);
+  });
+
+  it('preserves the last Visual selection for gv', () => {
+    const view = create();
+    keys(view, '2GV4Gzc');
+    keys(view, 'zRgv');
+    const selected = getCM(view).state.vim.sel;
+    expect([selected.anchor.line, selected.head.line].sort()).toEqual([1, 3]);
+    expect(getCM(view).state.vim.visualLine).toBe(true);
+  });
+
+  it.each(['foldc', 'foldcl', 'foldclose'])('supports Ex :%s ranges and one-level close', command => {
+    const view = create();
+    ex(view, `2,7${command}`);
+    expect(foldLines(view)).toEqual([2, 5]);
+  });
+
+  it.each(['foldo', 'foldop', 'foldopen'])('supports Ex :%s and recursive bang', command => {
+    const view = create();
+    keys(view, 'zM');
+    ex(view, `1${command}`);
+    expect(foldLines(view)).toEqual([2, 5]);
+    keys(view, 'zM');
+    ex(view, `1${command}!`);
+    expect(foldLines(view)).toEqual([]);
+  });
+
+  it('Ex recursive close supports percent, marks and a default current line', () => {
+    const view = create();
+    ex(view, '%foldclose!');
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+    ex(view, '%foldopen!');
+    keys(view, '2Gma4Gmb');
+    ex(view, '\'a,\'bfoldclose');
+    expect(foldLines(view)).toEqual([2]);
+    keys(view, '5G');
+    ex(view, 'foldclose');
+    expect(foldLines(view)).toEqual([2, 5]);
+  });
+
+  it('opens selected Ex subtrees without opening unrelated folds', () => {
+    const view = create();
+    keys(view, 'zMzo');
+    ex(view, '2,4foldopen!');
+    expect(foldLines(view)).toEqual([5]);
+  });
+
+  it('accepts a Visual range through the actual Ex command panel', () => {
+    const view = create();
+    keys(view, '2GV4G:');
+    const input = view.dom.querySelector('.cm-vim-panel input');
+    input.value = '\'<,\'>foldclose';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', keyCode: 13, bubbles: true}));
+    expect(foldLines(view)).toEqual([2]);
+    expect(getCM(view).state.vim.visualMode).toBe(false);
+  });
+
+  it.each(['0foldclose', '99foldclose', '4,2foldopen', 'foldopen!!', 'foldclose garbage', 'foldopen! | delete'])('rejects %s without modifying folds or text', command => {
+    const view = create();
+    keys(view, 'zc');
+    ex(view, command);
+    expect(foldLines(view)).toEqual([1]);
+    expect(view.state.doc.toString()).toBe(documentText);
+    expect(view.dom.textContent).toContain('Invalid fold range');
+  });
+
+  it('zv reveals the cursor line without opening unrelated descendants', () => {
+    const view = create();
+    keys(view, 'zMzv');
+    expect(foldLines(view)).toEqual([2, 5]);
+    keys(view, '2Gzv');
+    expect(foldLines(view)).toEqual([5]);
+  });
+
+  it('zX reapplies the saved level after manual overrides', () => {
+    const view = create();
+    keys(view, 'zRzczX');
+    expect(foldLines(view)).toEqual([]);
+    keys(view, 'zMzozX');
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+  });
+
+  it('zx reapplies the level and reveals the original cursor line', () => {
+    const view = create();
+    keys(view, 'zMzRzMzo2Gzo3G');
+    const head = view.state.selection.main.head;
+    keys(view, 'zx');
+    expect(foldLines(view)).toEqual([5]);
+    expect(view.state.selection.main.head).toBe(head);
+    keys(view, 'zX');
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+    expect(view.state.selection.main.head).toBe(0);
+  });
+
+  it('refreshes fold ranges after editing the document', () => {
+    const view = create({doc: 'BEGIN\n  PERFORM 1;\n  PERFORM 2;\nEND;', extensions: [plpgsqlFoldService, vim(), vimFolding()]});
+    keys(view, 'zMzo');
+    view.dispatch({changes: {from: 6, insert: '  PERFORM 0;\n'}});
+    keys(view, 'zX');
+    expect(folds(view)).toEqual([{from: 5, to: view.state.doc.line(4).to}]);
+  });
+
+  it('does not add text undo entries for folding operations', () => {
+    const view = create({extensions: [json(), history(), vim(), vimFolding()]});
+    keys(view, '2Gx');
+    keys(view, 'ggVGzCzvzXzx');
+    ex(view, '%foldopen!');
+    keys(view, 'u');
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('supports no-op commands on documents with no folds', () => {
+    const view = create({doc: 'SELECT 1;\nSELECT 2;'});
+    keys(view, 'VGzCzvzXzx');
+    ex(view, '%foldopen!');
+    expect(foldLines(view)).toEqual([]);
+    expect(view.state.doc.toString()).toBe('SELECT 1;\nSELECT 2;');
+  });
+
+  it('supports Visual and Ex folding on read-only editors', () => {
+    const view = create({extensions: [json(), vim(), vimFolding(), EditorState.readOnly.of(true)]});
+    keys(view, '2GV4Gzc');
+    expect(foldLines(view)).toEqual([2]);
+    ex(view, '%foldopen!');
+    expect(foldLines(view)).toEqual([]);
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('obeys per-editor folding preferences for Visual, Ex and refresh commands', () => {
+    const first = create();
+    const disabled = create({extensions: [json(), codeFolding(), vim(), vimFolding(false)]});
+    keys(first, 'zM');
+    keys(disabled, 'VGzC<Esc>zvzXzx');
+    ex(disabled, '%foldclose!');
+    expect(foldLines(disabled)).toEqual([]);
+    expect(foldLines(first)).toEqual([1, 2, 5]);
+  });
+
 });
