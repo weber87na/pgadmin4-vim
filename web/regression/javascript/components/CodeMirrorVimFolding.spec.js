@@ -447,4 +447,121 @@ describe('Vim folding', () => {
     expect(foldLines(first)).toEqual([1, 2, 5]);
   });
 
+  const cursorLine = view => view.state.doc.lineAt(view.state.selection.main.head).number;
+
+  it.each([
+    ['3G[z', 2], ['3G2[z', 1], ['3G9[z', 1],
+    ['3G]z', 4], ['3G2]z', 8], ['3G9]z', 8],
+    ['zj', 2], ['2zj', 5], ['9zj', 5],
+    ['Gzk', 7], ['G2zk', 4], ['G9zk', 4],
+  ])('navigates nested fold boundaries with %s', (input, expected) => {
+    const view = create();
+    keys(view, input);
+    expect(cursorLine(view)).toBe(expected);
+    expect(view.state.selection.main.head).toBe(view.state.doc.line(expected).from);
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('climbs enclosing open folds from a boundary', () => {
+    const view = create();
+    keys(view, '2G[z');
+    expect(cursorLine(view)).toBe(1);
+    keys(view, '4G]z');
+    expect(cursorLine(view)).toBe(8);
+  });
+
+  it('counts a closed subtree once and does not reveal hidden children', () => {
+    const view = create();
+    keys(view, 'zMzj');
+    expect(cursorLine(view)).toBe(1);
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+    keys(view, 'zozj');
+    expect(cursorLine(view)).toBe(2);
+    keys(view, 'zj');
+    expect(cursorLine(view)).toBe(5);
+    keys(view, 'zk');
+    expect(cursorLine(view)).toBe(2);
+    expect(foldLines(view)).toEqual([2, 5]);
+  });
+
+  it('skips closed folds when finding enclosing open boundaries', () => {
+    const view = create();
+    keys(view, 'zMzo2G]z');
+    expect(cursorLine(view)).toBe(8);
+    expect(foldLines(view)).toEqual([2, 5]);
+  });
+
+  it.each(['v', 'V', '<C-v>'])('extends a %s selection through a fold motion', mode => {
+    const view = create();
+    keys(view, '3G' + mode + ']z');
+    expect(getCM(view).state.vim.visualMode).toBe(true);
+    expect(getCM(view).state.vim.sel.anchor.line).toBe(2);
+    expect(getCM(view).state.vim.sel.head.line).toBe(3);
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('combines forward fold motion with yank without changing the document', () => {
+    const view = create();
+    keys(view, 'yzj');
+    expect(Vim.getRegisterController().getRegister('"').toString()).toBe('{\n');
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('deletes to a fold boundary and undoes as one edit', () => {
+    const view = create({extensions: [json(), history(), vim(), vimFolding()]});
+    keys(view, 'dzj');
+    expect(view.state.doc.toString()).toBe(documentText.slice(2));
+    keys(view, 'u');
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('replays operator fold motions with dot using the current document', () => {
+    const block = 'BEGIN\n  PERFORM 1;\n  PERFORM 2;\nEND;';
+    const view = create({doc: 'intro\n' + block + '\nspacer\n' + block,
+      extensions: [plpgsqlFoldService, history(), vim(), vimFolding()]});
+    keys(view, 'dzj');
+    expect(view.state.doc.toString()).toBe(block + '\nspacer\n' + block);
+    keys(view, '.');
+    expect(view.state.doc.toString()).toBe(block);
+  });
+
+  it('records and replays navigation in macros', () => {
+    const view = create();
+    keys(view, 'qazjq@a');
+    expect(cursorLine(view)).toBe(5);
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('cancels a pending operator when no fold target exists', () => {
+    const view = create({doc: 'plain text'});
+    keys(view, 'dzj');
+    expect(view.state.doc.toString()).toBe('plain text');
+    keys(view, 'x');
+    expect(view.state.doc.toString()).toBe('lain text');
+  });
+
+  it('preserves other bracket motions', () => {
+    const view = create({doc: '(one (two))', selection: {anchor: 7}});
+    keys(view, '[(');
+    expect(view.state.selection.main.head).toBe(5);
+  });
+
+  it('moves within read-only SQL without allowing operator edits', () => {
+    const view = create({extensions: [json(), vim(), vimFolding(), EditorState.readOnly.of(true)]});
+    keys(view, 'zj');
+    expect(cursorLine(view)).toBe(2);
+    keys(view, 'dzj');
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('leaves fold motions disabled outside their extension', () => {
+    const disabled = create({extensions: [json(), vim(), vimFolding(false)]});
+    const unscoped = create({extensions: [json(), vim()]});
+    for (const view of [disabled, unscoped]) {
+      keys(view, 'zjdzj');
+      expect(cursorLine(view)).toBe(1);
+      expect(view.state.doc.toString()).toBe(documentText);
+    }
+  });
+
 });

@@ -234,10 +234,54 @@ function runFolding(cm, args) {
   applyFolds(view, ranges, opening);
 }
 
+// Use the motion API so counts, Visual selections, operators, and macros
+// follow the engine's existing selection rules rather than moving the view
+// cursor behind Vim's back.
+function moveFold(cm, head, args) {
+  const view = cm.cm6;
+  if (!view || !view.state.facet(foldingEnabled)) return;
+  const state = view.state;
+  const closed = closedFolds(state);
+  const same = (a, b) => a.from === b.from && a.to === b.to;
+  const available = allFolds(state).filter(range => !closed.some(parent =>
+    contains(parent, range) && !same(parent, range)));
+  let current = head.line + 1;
+  let target;
+  for (let count = 0; count < Math.max(1, args.repeat || 1); count++) {
+    let candidates;
+    if (args.operation === 'start' || args.operation === 'end') {
+      const atStart = args.operation === 'start';
+      candidates = available.filter(range => !closed.some(item => same(item, range)) &&
+        onLine(range, state.doc.line(current)))
+        .map(range => state.doc.lineAt(atStart ? range.from : range.to).number)
+        .filter(number => atStart ? number < current : number > current)
+        .sort((a, b) => atStart ? b - a : a - b);
+    } else {
+      const forward = args.operation === 'next';
+      candidates = available.map(range => {
+        // The end of a closed fold is displayed at its header. Never reveal
+        // a hidden child just to perform a navigation command.
+        const position = forward || closed.some(item => same(item, range)) ? range.from : range.to;
+        return state.doc.lineAt(position).number;
+      }).filter(number => forward ? number > current : number < current)
+        .sort((a, b) => forward ? a - b : b - a);
+    }
+    if (!candidates.length) break;
+    current = target = candidates[0];
+  }
+  // Returning no motion cancels pending operators at a boundary.
+  if (target === undefined) return;
+  return {line: target - 1, ch: 0};
+}
+
 /** Add the Vim fold commands missing from codemirror-vim-core 0.1.0. */
 export default function vimFolding(enabled = true) {
   if (!registered) {
     Vim.defineAction('pgadminFold', runFolding);
+    Vim.defineMotion('pgadminFoldMotion', moveFold);
+    for (const [keys, operation] of Object.entries({'[z': 'start', ']z': 'end', zj: 'next', zk: 'previous'})) {
+      Vim.mapCommand(keys, 'motion', 'pgadminFoldMotion', {operation});
+    }
     for (const [keys, operation] of Object.entries({
       zc: 'close', zo: 'open', za: 'toggle', zM: 'closeAll', zR: 'openAll',
       zC: 'closeRecursive', zO: 'openRecursive', zA: 'toggleRecursive', zm: 'more', zr: 'less',
