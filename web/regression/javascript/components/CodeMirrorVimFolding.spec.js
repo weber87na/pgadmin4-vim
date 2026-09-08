@@ -200,4 +200,65 @@ describe('Vim folding', () => {
     keys(view, 'za');
     expect(folds(view)).toHaveLength(0);
   });
+  it('zC closes enclosing folds without closing an unrelated sibling', () => {
+    const view = create({selection: {anchor: documentText.indexOf('"value"')}});
+    keys(view, 'zC');
+    expect(folds(view)).toHaveLength(2);
+    keys(view, 'zo');
+    expect(folds(view).map(range => view.state.doc.lineAt(range.from).number)).toEqual([2]);
+  });
+  it('zO recursively opens a subtree and leaves other subtrees closed', () => {
+    const view = create();
+    keys(view, 'zMzo');
+    view.dispatch({selection: {anchor: view.state.doc.line(2).from}});
+    keys(view, 'zO');
+    expect(folds(view).map(range => view.state.doc.lineAt(range.from).number)).toEqual([5]);
+    keys(view, 'ggzMzO');
+    expect(folds(view)).toHaveLength(0);
+  });
+  it('zA recursively toggles the current subtree', () => {
+    const view = create();
+    keys(view, 'zA');
+    expect(folds(view)).toHaveLength(3);
+    keys(view, 'zA');
+    expect(folds(view)).toHaveLength(0);
+    view.dispatch({selection: {anchor: view.state.doc.line(2).from}});
+    keys(view, 'zA');
+    expect(folds(view).map(range => view.state.doc.lineAt(range.from).number)).toEqual([2]);
+  });
+  it('zm and zr adjust nesting levels with counts', () => {
+    const view = create();
+    for (const [command, count] of [['zm', 2], ['zm', 3], ['zr', 2], ['zr', 0], ['2zm', 3], ['2zr', 0], ['9zr', 0], ['zm', 0], ['zM', 3]]) {
+      keys(view, command);
+      expect(folds(view)).toHaveLength(count);
+    }
+  });
+  it('zM and zR reset levels and level commands reset manual overrides', () => {
+    const view = create();
+    for (const [command, count] of [['zMzr', 2], ['zRzm', 2], ['zc', 3], ['zr', 0]]) {
+      keys(view, command);
+      expect(folds(view)).toHaveLength(count);
+    }
+  });
+  it('keeps fold levels local to each editor', () => {
+    const first = create();
+    const second = create();
+    keys(first, 'zM');
+    keys(second, 'zm');
+    keys(first, 'zr');
+    expect(folds(first)).toHaveLength(2);
+    expect(folds(second)).toHaveLength(2);
+  });
+  it('supports read-only documents and obeys folding preferences', () => {
+    const readonly = create({extensions: [json(), vim(), vimFolding(), EditorState.readOnly.of(true)]});
+    const disabled = create({extensions: [json(), vim(), vimFolding(false)]});
+    keys(readonly, 'zA');
+    expect(folds(readonly)).toHaveLength(3);
+    keys(readonly, 'zO');
+    expect(folds(readonly)).toHaveLength(0);
+    keys(disabled, 'zCzAzm');
+    expect(folds(disabled)).toHaveLength(0);
+    expect(readonly.state.doc.toString()).toBe(documentText);
+  });
+
 });

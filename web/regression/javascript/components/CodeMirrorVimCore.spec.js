@@ -278,4 +278,18 @@ describe('CodeMirror Vim core commands', () => {
     press('gggcc');
     expect(text()).toBe('SELECT 1;\n-- SELECT 2;');
   });
+  it.each([
+    ['b\na\nb', '%sort u', 'a\nb'],
+    ['10\n2\n1', '%sort n', '1\n2\n10'],
+    ['keep\ndrop\nkeep', 'g/drop/d', 'keep\nkeep'],
+    ['keep\ndrop\nkeep', 'v/keep/d', 'keep\nkeep'],
+    ['abc\ndef', '%normal x', 'bc\nef'],
+    ['one\n  two\nthree', '1,2join', 'one two\nthree'],
+    ['one\ntwo\nthree', '2delete', 'one\nthree'],
+  ])('audits built-in Ex command %s / %s', (doc, command, expected) => {
+    editor(doc);
+    prompt(':', command);
+    expect(text()).toBe(expected);
+  });
+
 });

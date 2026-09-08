@@ -7,13 +7,23 @@
 //
 //////////////////////////////////////////////////////////////
 
-import { EditorSelection, Facet } from '@codemirror/state';
+import { EditorSelection, Facet, StateEffect, StateField } from '@codemirror/state';
 import {
   codeFolding, ensureSyntaxTree, foldable, foldedRanges, foldEffect, unfoldEffect,
 } from '@codemirror/language';
 import { Vim } from '@replit/codemirror-vim';
 
 const foldingEnabled = Facet.define({combine: values => values.some(Boolean)});
+const setLevel = StateEffect.define();
+const foldLevel = StateField.define({
+  create: () => Infinity,
+  update: (value, transaction) => {
+    for (const effect of transaction.effects) {
+      if (effect.is(setLevel)) value = effect.value;
+    }
+    return value;
+  },
+});
 let registered = false;
 
 function closedFolds(state) {
@@ -77,9 +87,25 @@ function openAt(line, closed, repeat) {
   });
 }
 
-function applyFolds(view, ranges, opening) {
-  if (!ranges.length) return;
-  const spec = {effects: ranges.map(range => (opening ? unfoldEffect : foldEffect).of(range))};
+function allFolds(state) {
+  ensureSyntaxTree(state, state.doc.length, 100);
+  const ranges = [];
+  for (let number = 1; number <= state.doc.lines; number++) {
+    const line = state.doc.line(number);
+    const range = foldable(state, line.from, line.to);
+    if (range) ranges.push(range);
+  }
+  const ancestors = [];
+  return ranges.sort(outerFirst).map(range => {
+    while (ancestors.length && !contains(ancestors[ancestors.length - 1], range)) ancestors.pop();
+    ancestors.push(range);
+    return {...range, depth: ancestors.length};
+  });
+}
+
+function applyFolds(view, ranges, opening, effects = []) {
+  if (!ranges.length && !effects.length) return;
+  const spec = {effects: [...effects, ...ranges.map(range => (opening ? unfoldEffect : foldEffect).of(range))]};
   if (!opening) {
     const state = view.state;
     // A cursor inside a newly closed fold must remain visible. Preserve all
@@ -106,17 +132,31 @@ function runFolding(cm, args) {
   const closed = closedFolds(state);
   const line = state.doc.lineAt(state.selection.main.head);
   const repeat = Math.max(1, args.repeat || 1);
-  let opening = args.operation === 'open' || args.operation === 'openAll';
+  let opening = args.operation === 'open' || args.operation === 'openRecursive';
   let ranges;
-  if (args.operation === 'openAll') {
-    ranges = closed;
-  } else if (args.operation === 'closeAll') {
-    ensureSyntaxTree(state, state.doc.length, 100);
-    ranges = [];
-    for (let number = 1; number <= state.doc.lines; number++) {
-      const current = state.doc.line(number);
-      const range = foldable(state, current.from, current.to);
-      if (range) ranges.push(range);
+  if (['openAll', 'closeAll', 'more', 'less'].includes(args.operation)) {
+    const available = allFolds(state);
+    const maximum = available.reduce((max, range) => Math.max(max, range.depth), 0);
+    const previous = state.field(foldLevel);
+    const level = args.operation === 'openAll' ? maximum
+      : args.operation === 'closeAll' ? 0
+        : args.operation === 'more' ? Math.max(0, (Number.isFinite(previous) ? previous : maximum) - repeat)
+          : (Number.isFinite(previous) ? previous : maximum) + repeat;
+    // Reset manual overrides to the requested level in the same transaction.
+    applyFolds(view, available.filter(range => range.depth > level), false,
+      [...closed.map(range => unfoldEffect.of(range)), setLevel.of(level)]);
+    return;
+  } else if (args.operation === 'closeRecursive') {
+    ranges = foldCandidates(state, line);
+  } else if (args.operation === 'openRecursive') {
+    ranges = openAt(line, closed, Infinity);
+  } else if (args.operation === 'toggleRecursive') {
+    opening = closed.some(range => onLine(range, line));
+    if (opening) {
+      ranges = openAt(line, closed, Infinity);
+    } else {
+      const root = foldCandidates(state, line)[0];
+      ranges = root ? allFolds(state).filter(range => contains(root, range)) : [];
     }
   } else {
     if (args.operation === 'toggle') opening = closed.some(range => onLine(range, line));
@@ -131,6 +171,7 @@ export default function vimFolding(enabled = true) {
     Vim.defineAction('pgadminFold', runFolding);
     for (const [keys, operation] of Object.entries({
       zc: 'close', zo: 'open', za: 'toggle', zM: 'closeAll', zR: 'openAll',
+      zC: 'closeRecursive', zO: 'openRecursive', zA: 'toggleRecursive', zm: 'more', zr: 'less',
     })) {
       Vim.mapCommand(keys, 'action', 'pgadminFold', {operation}, {context: 'normal'});
     }
@@ -138,5 +179,5 @@ export default function vimFolding(enabled = true) {
   }
   // Vim's command registry is shared, but each action is enabled only in
   // editors that install this extension. Folding also works in read-only SQL.
-  return [foldingEnabled.of(enabled), enabled ? codeFolding() : []];
+  return [foldingEnabled.of(enabled), enabled ? [codeFolding(), foldLevel] : []];
 }

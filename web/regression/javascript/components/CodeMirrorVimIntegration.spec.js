@@ -241,4 +241,23 @@ describe('Query editor Vim integration', () => {
     expect(editor.view.getSelection()).toBe(selection);
     expect(getCM(editor.view).state.vim.visualMode).toBe(true);
   });
+  it('installs line commands in the Query editor and retains them across preference changes', () => {
+    const editor = mountEditor();
+    ex(editor.view, '1copy $');
+    expect(editor.view.getValue()).toBe('SELECT 1;\nSELECT 2;\nSELECT 1;');
+    editor.rerender({vimShowStatus: false});
+    ex(editor.view, '2move 0');
+    expect(editor.view.getValue()).toBe('SELECT 2;\nSELECT 1;\nSELECT 1;');
+  });
+  it.each(['readonly', 'disabled'])('locks Ex line operations when %s changes', property => {
+    const editor = mountEditor();
+    editor.rerender({[property]: true});
+    ex(editor.view, '1t $');
+    ex(editor.view, '1m $');
+    expect(editor.view.getValue()).toBe('SELECT 1;\nSELECT 2;');
+    editor.rerender({[property]: false});
+    ex(editor.view, '1t $');
+    expect(editor.view.getValue()).toBe('SELECT 1;\nSELECT 2;\nSELECT 1;');
+  });
+
 });

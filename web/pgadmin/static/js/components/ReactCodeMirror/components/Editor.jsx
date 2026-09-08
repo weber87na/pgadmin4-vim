@@ -59,6 +59,7 @@ import vimStatus from '../extensions/vimStatus';
 import vimFolding from '../extensions/vimFolding';
 import vimSurround from '../extensions/vimSurround';
 import vimSave from '../extensions/vimSave';
+import vimExLines from '../extensions/vimExLines';
 import vimKeys from '../extensions/vimKeys';
 
 const arrowRightHtml = ReactDOMServer.renderToString(<KeyboardArrowRightRoundedIcon style={{width: '16px', fill: 'currentcolor'}} />);
@@ -443,6 +444,7 @@ export default function Editor({
         vimFolding(vimFoldEnabled),
         vimSurround(),
         vimSave(onVimSave),
+        vimExLines(),
       ] : []),
     });
   }, [vimMode, vimShowStatus, vimFoldEnabled, onVimSave]);
