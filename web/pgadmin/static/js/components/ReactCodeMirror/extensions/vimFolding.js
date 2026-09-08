@@ -25,6 +25,33 @@ const foldLevel = StateField.define({
     return value;
   },
 });
+const suspendFolds = StateEffect.define();
+const suspendedFolds = StateField.define({
+  create: () => null,
+  update(value, transaction) {
+    if (transaction.isUserEvent('document.replace')) return null;
+    if (value && transaction.docChanged) {
+      value = value.map(range => ({
+        from: transaction.changes.mapPos(range.from, 1),
+        to: transaction.changes.mapPos(range.to, -1),
+      })).filter(range => range.from < range.to);
+    }
+    for (const effect of transaction.effects) {
+      if (effect.is(suspendFolds)) value = effect.value;
+    }
+    return value;
+  },
+});
+
+function resumeFolds(view, preserveCursor = false) {
+  const saved = view.state.field(suspendedFolds, false);
+  if (!saved) return;
+  const available = allFolds(view.state);
+  const valid = saved.filter(range => available.some(item => item.from === range.from && item.to === range.to));
+  if (preserveCursor) view.dispatch({effects: [suspendFolds.of(null), ...valid.map(range => foldEffect.of(range))]});
+  else applyFolds(view, valid, false, [suspendFolds.of(null)]);
+}
+
 let registered = false;
 
 function closedFolds(state) {
@@ -165,14 +192,33 @@ function rangeFolds(state, start, end, opening, recursive) {
 function visualFolding(cm, args) {
   const view = cm.cm6;
   if (!view || !view.state.facet(foldingEnabled)) return;
+  resumeFolds(view, true);
   const {anchor, head} = cm.state.vim.sel;
   const start = Math.min(anchor.line, head.line) + 1;
   const end = Math.max(anchor.line, head.line) + 1;
   // Retain Vim's last selection/marks for gv, and remove block selections
   // before closing folds so the resulting Normal cursor can stay visible.
-  const ranges = rangeFolds(view.state, start, end, args.opening, args.recursive);
-  Vim.exitVisualMode(cm);
-  applyFolds(view, ranges, args.opening);
+  if (args.toggle) {
+    const closed = closedFolds(view.state);
+    const available = allFolds(view.state);
+    const opening = [];
+    const closing = [];
+    for (let number = start; number <= end; number++) {
+      const line = view.state.doc.line(number);
+      const root = closed.filter(range => onLine(range, line)).sort(outerFirst)[0];
+      const target = root || available.filter(range => onLine(range, line)).sort((a, b) => -outerFirst(a, b))[0];
+      if (!target) continue;
+      if (root) opening.push(...openAt(line, closed, args.recursive ? Infinity : 1));
+      else closing.push(...(args.recursive ? available.filter(range => contains(target, range)) : [target]));
+      number = Math.max(number, view.state.doc.lineAt(target.to).number);
+    }
+    Vim.exitVisualMode(cm);
+    applyFolds(view, closing, false, [...opening.map(range => unfoldEffect.of(range)), suspendFolds.of(null)]);
+  } else {
+    const ranges = rangeFolds(view.state, start, end, args.opening, args.recursive);
+    Vim.exitVisualMode(cm);
+    applyFolds(view, ranges, args.opening, [suspendFolds.of(null)]);
+  }
 }
 
 function exFolding(cm, params, opening) {
@@ -186,12 +232,25 @@ function exFolding(cm, params, opening) {
     cm.openNotification(document.createTextNode(gettext('Invalid fold range or argument. Use :[range]foldopen[!] or :[range]foldclose[!].')), {bottom: true});
     return;
   }
+  resumeFolds(view);
   applyFolds(view, rangeFolds(view.state, start, end, opening, argument === '!'), opening);
 }
 
 function runFolding(cm, args) {
   const view = cm.cm6;
   if (!view || !view.state.facet(foldingEnabled)) return;
+  if (['disable', 'enable', 'invert'].includes(args.operation)) {
+    const saved = view.state.field(suspendedFolds);
+    const disabling = args.operation === 'disable' || (args.operation === 'invert' && saved === null);
+    if (disabling) {
+      if (saved === null) {
+        const closed = closedFolds(view.state);
+        applyFolds(view, closed, true, [suspendFolds.of(closed)]);
+      }
+    } else resumeFolds(view);
+    return;
+  }
+  resumeFolds(view, ['view', 'refreshView'].includes(args.operation));
   const state = view.state;
   const closed = closedFolds(state);
   const line = state.doc.lineAt(state.selection.main.head);
@@ -286,6 +345,7 @@ export default function vimFolding(enabled = true) {
       zc: 'close', zo: 'open', za: 'toggle', zM: 'closeAll', zR: 'openAll',
       zC: 'closeRecursive', zO: 'openRecursive', zA: 'toggleRecursive', zm: 'more', zr: 'less',
       zv: 'view', zx: 'refreshView', zX: 'refresh',
+      zn: 'disable', zN: 'enable', zi: 'invert',
     })) {
       Vim.mapCommand(keys, 'action', 'pgadminFold', {operation}, {context: 'normal'});
     }
@@ -295,11 +355,14 @@ export default function vimFolding(enabled = true) {
     ]) {
       Vim.mapCommand(keys, 'action', 'pgadminVisualFold', {opening, recursive}, {context: 'visual'});
     }
+    for (const [keys, recursive] of [['za', false], ['zA', true]]) {
+      Vim.mapCommand(keys, 'action', 'pgadminVisualFold', {toggle: true, recursive}, {context: 'visual'});
+    }
     Vim.defineEx('foldopen', 'foldo', (cm, params) => exFolding(cm, params, true));
     Vim.defineEx('foldclose', 'foldc', (cm, params) => exFolding(cm, params, false));
     registered = true;
   }
   // Vim's command registry is shared, but each action is enabled only in
   // editors that install this extension. Folding also works in read-only SQL.
-  return [foldingEnabled.of(enabled), enabled ? [codeFolding(), foldLevel] : []];
+  return [foldingEnabled.of(enabled), enabled ? [codeFolding(), foldLevel, suspendedFolds] : []];
 }

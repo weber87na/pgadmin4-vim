@@ -564,4 +564,114 @@ describe('Vim folding', () => {
     }
   });
 
+  it('zn opens temporarily and zN restores every saved nested fold', () => {
+    const view = create();
+    keys(view, 'zMzn');
+    expect(foldLines(view)).toEqual([]);
+    keys(view, 'zN');
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+  it('repeated zn does not overwrite the saved folds', () => {
+    const view = create();
+    keys(view, '2GzcznznzN');
+    expect(foldLines(view)).toEqual([2]);
+  });
+  it('zi toggles and retains an empty fold snapshot', () => {
+    const view = create();
+    keys(view, 'zizizN');
+    expect(foldLines(view)).toEqual([]);
+    keys(view, 'zMzizi');
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+  });
+  it('preserves fold levels across temporary unfolding', () => {
+    const view = create();
+    keys(view, 'zRzmznzNzr');
+    expect(foldLines(view)).toEqual([]);
+  });
+  it('restores valid positions after insertion while temporarily unfolded', () => {
+    const view = create();
+    keys(view, 'zMzn');
+    view.dispatch({changes: {from: 0, insert: '\n'}});
+    keys(view, 'zN');
+    expect(foldLines(view)).toEqual([2, 3, 6]);
+  });
+  it('drops deleted blocks from the saved snapshot', () => {
+    const view = create();
+    keys(view, '2Gzczn');
+    view.dispatch({changes: {from: 0, to: view.state.doc.length, insert: 'null'}});
+    keys(view, 'zN');
+    expect(foldLines(view)).toEqual([]);
+  });
+  it('never applies saved folds to a replacement document', () => {
+    const view = create();
+    keys(view, 'zMzn');
+    view.dispatch({changes: {from: 0, to: view.state.doc.length, insert: documentText}, userEvent: 'document.replace'});
+    keys(view, 'zN');
+    expect(foldLines(view)).toEqual([]);
+  });
+  it('moves a restored hidden cursor to the visible header', () => {
+    const view = create();
+    keys(view, 'zMzn3GzN');
+    expect(view.state.selection.main.head).toBe(0);
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+  });
+  it('zx keeps the original cursor when leaving temporary unfolding', () => {
+    const view = create();
+    keys(view, 'zMzn3G');
+    const head = view.state.selection.main.head;
+    keys(view, 'zx');
+    expect(view.state.selection.main.head).toBe(head);
+    expect(foldLines(view)).toEqual([5]);
+  });
+  it.each(['2GV7Gza', '7GV2Gza', '2Gv7Gza', '2G<C-v>7Gza'])('toggles mixed selected folds with %s', input => {
+    const view = create();
+    keys(view, '2Gzc');
+    keys(view, input);
+    expect(foldLines(view)).toEqual([5]);
+    expect(getCM(view).state.vim.visualMode).toBe(false);
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+  it('Visual zA opens a closed root and all its children', () => {
+    const view = create();
+    keys(view, 'zMVzA');
+    expect(foldLines(view)).toEqual([]);
+    keys(view, 'ggVGzA');
+    expect(foldLines(view)).toEqual([1, 2, 5]);
+  });
+  it('Visual za opens just one level and preserves gv', () => {
+    const view = create();
+    keys(view, 'zMVza');
+    expect(foldLines(view)).toEqual([2, 5]);
+    keys(view, 'gv');
+    expect(getCM(view).state.vim.visualMode).toBe(true);
+  });
+  it('resumes saved folds before Visual or Ex operations', () => {
+    const view = create();
+    keys(view, 'zMznVza');
+    expect(foldLines(view)).toEqual([2, 5]);
+    keys(view, 'zMzn');
+    ex(view, '%foldopen!');
+    expect(foldLines(view)).toEqual([]);
+    keys(view, 'zN');
+    expect(foldLines(view)).toEqual([]);
+  });
+  it('keeps suspended states separate between editors', () => {
+    const first = create();
+    const second = create();
+    keys(first, 'zMzn');
+    keys(second, 'zN');
+    expect(foldLines(second)).toEqual([]);
+    keys(first, 'zN');
+    expect(foldLines(first)).toEqual([1, 2, 5]);
+  });
+  it('supports read-only views and disabled folding preferences', () => {
+    const readonly = create({extensions: [json(), vim(), vimFolding(), EditorState.readOnly.of(true)]});
+    const disabled = create({extensions: [json(), vim(), vimFolding(false)]});
+    keys(readonly, 'zMznzNVza');
+    expect(foldLines(readonly)).toEqual([2, 5]);
+    keys(disabled, 'znzNziVGzA');
+    expect(foldLines(disabled)).toEqual([]);
+  });
+
 });
