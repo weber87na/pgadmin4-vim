@@ -3,6 +3,8 @@
 適用於本分支的 Query Tool SQL 編輯器。Vim 由內建前端套件
 `@replit/codemirror-vim 6.4.0` / `codemirror-vim-core 0.1.0` 提供，
 不需要安裝 Vim、Neovim，也不需要 `init.lua`。
+本次以 Yarn patch 修正核心非遞迴映射：RHS 會保留 pgAdmin 新增的
+數字、摺疊與分頁指令，同時略過使用者映射；套件版本維持不變。
 
 ## 開啟方式
 
@@ -21,6 +23,7 @@
 
 「既有」表示由鎖定版本的 Vim 引擎提供；「第一批」已在 PR #21 合併；
 「第二批」與「第三批」已在 PR #22 合併；「第四批」加入摺疊跳轉，「第五批」加入變更清單，「第六批」補上摺疊開關與 Visual 切換。
+本次接續新增數字編輯、手動摺疊、分頁生命週期與持久設定。
 Surround 是外掛式擴充，不列為原生 Vim 功能。
 
 | 類別 | 主要指令 | 狀態 |
@@ -54,6 +57,11 @@ Surround 是外掛式擴充，不列為原生 Vim 功能。
 | 範圍普通模式操作 | `:%normal x` | 既有；第二批新增回歸覆蓋 |
 | Ex 行操作 | `:1,2join`、`:2delete` | 既有；第二批新增回歸覆蓋 |
 | 儲存 SQL | `:w`、`:write` | 第一批接到 pgAdmin 儲存流程 |
+| Visual 數字與序列 | `Ctrl+a/x`、`g Ctrl+a/x` | 本次新增，含精確整數 |
+| 手動摺疊 | `zf zF zd zD zE`、`:fold` | 本次新增 |
+| 編輯器摺疊選項 | `foldmethod`、`foldlevel`、`foldenable` | 本次新增支援子集 |
+| 關閉與儲存後關閉 | `:q :wq :x`、`ZZ ZQ` | 本次接入 pgAdmin 分頁流程 |
+| 持久 Vim 設定 | Preferences 內的設定與 Leader | 本次新增可驗證子集 |
 | 唯讀／停用保護 | 刪除、縮排、貼上、Tab、拖放等操作 | 第一批補強 |
 
 ## 常用操作
@@ -124,7 +132,7 @@ zr     提高一層展開層級，顯示更多內容
 `zR` 設為目前最大深度；`zm/zr` 依次數調整並重新套用，會重設個別區塊的手動開關。
 `zC` 不主動關閉未包含游標行的兄弟區塊；`zA` 關閉目前區塊及其子區塊。
 初次使用層級命令時，以全部展開為起點。這是 CodeMirror 語法摺疊整合，
-尚未提供 Vim 的 `foldmethod`／`:set foldlevel` 選項。
+本次另加入 `foldmethod=syntax|manual` 與 `:set foldlevel` 子集，見後文。
 
 ### 選取範圍摺疊與重新計算（第三批）
 
@@ -217,6 +225,7 @@ dzj     刪除至下一個區塊起點之前
 每個編輯器最多保留 100 個位置；同一行、相距小於 79 個 UTF-16 單位的相鄰
 變更會合併，避免每輸入一個字元就增加一筆。這是目前固定的合併規則，尚未連動
 Vim 的 `textwidth`／`wrapmargin`，也不採用原生 Vim 的位元組欄位計算。
+本次 Preferences 可保存 `textwidth` 供原有文字重排使用，但不會改變此清單的合併門檻。
 
 - 記錄帶有編輯事件的輸入、刪除、貼上與 Ex 行操作；純游標移動不新增紀錄。
 - 插入／刪除會映射既有位置；復原／重做不新增紀錄，但保留並更新清單。
@@ -249,13 +258,15 @@ V … zA   遞迴切換選取範圍內的區塊
 選取混合狀態時，已關閉的區塊展開，開啟的區塊關閉；處理過的區塊不會因為
 涵蓋多個選取行而被重複切換。操作後回到 Normal 模式，SQL 文字不變。
 
-暫時展開採快照機制，並非完整 `:set foldenable` 實作：
+暫時展開採快照機制；本次 `:set foldenable`／`:set nofoldenable` 也接入此狀態：
 
 - 再執行其他 Vim 摺疊開關／層級／範圍命令時，先恢復快照再執行該命令；
   摺疊跳轉不會主動恢復。這與原生 Vim 部分命令保留 `nofoldenable` 的行為有差異。
-- 不攔截滑鼠摺疊欄或其他 CodeMirror 摺疊操作，不提供全域持續禁用摺疊。
+- `nofoldenable` 期間會抑制滑鼠及其他 CodeMirror 操作新增的關閉範圍；
+  其他 Vim 摺疊命令仍可能重新啟用摺疊，維持既有命令行為。
 - 編輯後只恢復位置映射仍符合語法服務的區塊，已刪除或失效的範圍會捨棄。
-- 切換顯示偏好保留快照；載入另一份 SQL、關閉 Vim／code folding 或銷毀編輯器時清除。
+- 切換顯示偏好保留快照；載入另一份 SQL 清除舊範圍，但保留 foldmethod、
+  foldlevel 與 foldenable 選項；關閉 Vim／code folding 或銷毀編輯器時清除狀態。
 - 恢復後若游標落在隱藏區域，會移到可見標頭；`zx` 則保留並顯示原游標行。
 
 ### 整行複製與搬移
@@ -311,22 +322,106 @@ Query Tool 的儲存 SQL 檔案流程；尚未命名的分頁會使用原有儲�
 目前僅支援儲存整份查詢；`:w filename`、`:w!`、範圍儲存會提示改用
 `:w`，不會默默忽略參數。`:w` 不會執行 SQL，也不會提交資料庫交易。
 
+## 本次新增操作
+
+### Visual 數字與遞增序列
+
+```text
+Ctrl+a          增加目前行游標處或之後的數字
+Ctrl+x          減少目前行游標處或之後的數字
+V … Ctrl+a      每個選取行的第一個數字增加 1
+V … 5 Ctrl+x    每個選取行的第一個數字減少 5
+V … g Ctrl+a    依序增加 1、2、3……
+V … 2g Ctrl+x   依序減少 2、4、6……
+:set nrformats=bin,hex
+```
+
+支援字元、整行、區塊及反向選取；序列由上往下處理，沒有數字的行不占用序號。
+Visual 只處理選取範圍內的數字片段。使用精確整數運算，避免 SQL 中的大整數 ID
+在 JavaScript Number 的安全範圍外被四捨五入。操作可單步復原並支援重播。
+不將小數或科學記號視為單一整數。
+
+### 手動摺疊
+
+先輸入 `:set foldmethod=manual`（或 `:set fdm=manual`），再使用：
+
+```text
+zf2j          把目前行到往下兩行建立為手動摺疊
+V … zf        摺疊選取涉及的行
+3zF           摺疊目前行起的三行
+:10,20fold    建立第 10～20 行的手動摺疊
+zd            刪除目前摺疊定義
+zD            遞迴刪除目前摺疊及其子摺疊
+zE            刪除全部手動摺疊
+:set fdl=1    設定展開層級
+:set nofen    暫時展開
+:set fen      恢復摺疊
+:set fdm=syntax  返回原有 SQL 語法摺疊
+```
+
+建立／刪除摺疊不會刪除 SQL 文字。手動範圍隨文字編輯映射；載入另一份 SQL
+會清除範圍，但保留選項。既有 `zc/zo/za`、層級與跳轉指令可操作手動摺疊。
+保留的 foldlevel 可用 `zx`／`zX` 套用到新文件。manual 模式下語言服務仍可能
+顯示摺疊欄標記，但只能關閉已建立的手動範圍。
+
+### 關閉與切換 Query Tool
+
+`:q` 要求關閉目前 Query Tool；`:wq`、`:x` 和 `ZZ` 先經由原有流程儲存，
+確認成功後才要求關閉。取消選檔、儲存失敗，或儲存期間 SQL 又被修改時，
+分頁保持開啟；`:x` 和 `ZZ` 遇到未修改內容可直接提出關閉要求。
+未儲存資料、執行中的查詢及交易提示沿用 pgAdmin 原有流程。
+`:q!` 和 `ZQ` 也會走 pgAdmin 的關閉確認，不略過這些提示。
+
+| 指令 | 行為 |
+| --- | --- |
+| `gt`／`gT` | 下一個／上一個 Query Tool |
+| `3gt` | 目前群組中的第 3 個 Query Tool |
+| `3gT` | 往前切換 3 個 Query Tool |
+| `:bn`／`:bp` | 下一個／上一個 Query Tool；可附相對次數 |
+| `:bf`／`:bl` | 第一個／最後一個 Query Tool |
+| `:b 3`／`:tabn 3` | 選擇第 3 個 Query Tool |
+| `:tabn`／`:tabp` | 下一個／上一個 Query Tool |
+
+僅在目前 dock 群組內切換，略過 Dashboard、PSQL 等其他工具；超出範圍的指定編號會顯示提示。
+
+### 保存設定與自訂 Leader
+
+到 **File → Preferences → Query Tool → Editor** 設定 **Vim configuration**
+及 **Vim leader key**。設定由 pgAdmin 保存，重新開啟 Query Tool 後套用；
+不需要磁碟上的 `.vimrc` 或 Neovim。Leader 預設為逗號 `,`。
+
+```vim
+" 一行一個設定或映射
+set nrformats=bin,hex
+set textwidth=80
+nnoremap <Leader>w :w<CR>
+nnoremap <Leader>q :q<CR>
+inoremap jk <Esc>
+```
+
+支援 `set`／`setlocal` 的 `textwidth`、`nrformats`、`foldmethod`、`foldlevel`、
+`foldenable`，以及 `nnoremap`／`vnoremap`／`inoremap`、`nunmap`／`vunmap`／`iunmap`／`unmap`。
+可用 `<Leader>`、`<Space>`、`<CR>`、`<Esc>`、`<Nop>` 等按鍵記法；註解需獨立一行並以 `"` 開頭。
+
+這是經驗證的設定子集，不是任意 Vimscript 執行環境。無效命令會指出行號，
+不會拿設定文字當作 SQL 執行。設定與映射限於各自編輯器，更新時會移除過期映射。
+
 ## 快捷鍵與限制
 
 - Vim 啟用時，Vim 已使用的按鍵優先。`Ctrl+f` 是翻頁；可用 `/` 搜尋，
   或使用 pgAdmin 的選單。未被 Vim 使用的 Query Tool 快捷鍵保留原有路徑。
 - Normal 模式的 `Tab` 等同 `Ctrl+i`，向前走訪跳躍清單；`Shift+Tab`
   不會誤改縮排。Insert 模式維持 pgAdmin 原有的 Tab 縮排／補全行為。
-- `,` 保留 Vim 的反向重複 `f`／`t` 搜尋功能；本分支未另外指定 Leader。
+- Leader 預設為 `,`；未設定以 Leader 開頭的映射時，逗號保留原有反向搜尋功能。
+  若設定 `,w` 等映射，逗號會成為等待後續按鍵的前綴，可用 `Esc` 取消。
 - `"+y`／`"+p` 使用引擎的系統剪貼簿支援，需要瀏覽器／Electron 提供
   Clipboard API 及允許存取；`"*` 不等同系統剪貼簿。
-- 持久化 `.vimrc`、跨 Query Tool 分頁的 Vim buffer／window 管理、`:q`／`:wq`／`ZZ`
-  及完整 Vim 外掛 API 尚未支援。EasyMotion 是外掛功能，亦未加入。
-- `zf/zd` 手動建立／刪除摺疊，以及 Vim 摺疊選項尚未實作。
-  Visual 模式目前支援 `zc/zo/zC/zO/za/zA`。
-- Visual `g Ctrl+a`／`g Ctrl+x` 遞增序列仍待實作。
-  既有 Normal `Ctrl+a`／`Ctrl+x` 使用 JavaScript Number；不保證大整數及所有
-  `nrformats` 行為與原生 Vim 一致。
+- 可保存 Preferences 設定子集；不讀取磁碟 `.vimrc`，不提供完整 Vim 外掛 API 或 EasyMotion。
+- 分頁切換限於目前 pgAdmin 分頁群組內的 Query Tool，不控制瀏覽器分頁、其他視窗，
+  也不提供完整 Vim window 分割命令。
+- 手動摺疊按整行建立，支援手動與語法兩種方法；未提供 marker、indent、expr 等其他 foldmethod。
+- 十進位數字採任意精度，不模擬 Vim 的整數溢位；二／八／十六進位按 unsigned 64-bit 溢位處理。
+  `nrformats` 支援 `bin,hex,octal,alpha,unsigned` 及空值；不提供所有 Vim 格式選項。
 - Ex 解析仍由現有引擎提供；未宣稱完整 Vim 地址、正規表示式、Vimscript 或外部 shell 相容。
 - 本專案提供編輯器內的 Vim 操作，不能據此宣稱完整 Vim／Neovim 相容。
 
@@ -337,21 +432,24 @@ Query Tool 的儲存 SQL 檔案流程；尚未命名的分頁會使用原有儲�
 | 功能 | 目前狀態 | 尚需處理 |
 | --- | --- | --- |
 | 變更清單完整原生選項 | 基本指令已實作 | `textwidth`／`wrapmargin`、`:keepjumps` 與持久化 |
-| Visual `Ctrl+a/x`、`g Ctrl+a/x` | 未補齊 | 選取內數字操作、逐行序列、區塊選取與重播 |
-| 原生數字格式與大整數 | 部分相容 | 現有引擎使用 Number；需補足精確整數及格式設定 |
-| 手動摺疊 `zf/zF/zd/zD/zE` | 未實作 | 獨立保存手動範圍、修改後映射、與語法摺疊協調 |
-| 原生摺疊選項 | 部分相容 | `zn/zN/zi` 快照開關已提供；完整 foldenable／foldmethod 等選項未提供 |
-| `:q/:wq/ZZ`、buffer／window 管理 | 未實作 | 接入 pgAdmin 儲存、取消與分頁生命週期 |
+| Visual `Ctrl+a/x`、`g Ctrl+a/x` | 本次已實作 | 依選取中的整數片段處理，不是浮點運算 |
+| 原生數字格式與大整數 | 本次補上精確整數及格式子集 | 十進位溢位與其他未列出的 nrformats 仍有差異 |
+| 手動摺疊 `zf/zF/zd/zD/zE` | 本次已實作 | 摺疊定義不隨 SQL 檔案保存，亦不是獨立 Vim 摺疊歷史 |
+| 原生摺疊選項 | 本次新增常用子集 | 僅 syntax/manual；foldtext、foldcolumn、marker/indent/expr 等未提供 |
+| `:q/:wq/ZZ`、buffer／window 管理 | 本次接入儲存／關閉及分頁切換 | 原有 pgAdmin 提示仍有效；完整 window/buffer 管理未提供 |
 | Ex 完整地址／命令串接／Vimscript | 部分相容 | 現有引擎解析範圍有限；不支援完整腳本環境 |
-| 持久化 `.vimrc` | 未實作 | 可保存且可驗證的設定／映射機制 |
+| 持久化設定 | 本次提供 Preferences 文字設定與 Leader | 不讀取 `.vimrc` 檔案；只有列出的 set 與非遞迴映射子集 |
 
 ## 開發與驗證
+
+本次本機驗證：13 組相關套件、498 個測試通過；相關 JavaScript ESLint、
+Python 偏好設定編譯與鎖定依賴安裝通過。包含非遞迴映射修補與 Tab 映射整合。
 
 在 `web` 目錄安裝鎖定版本並執行 Vim 與編輯器回歸測試：
 
 ```powershell
 corepack yarn install --immutable
-corepack yarn jest --runInBand --runTestsByPath regression/javascript/components/CodeMirrorVimCore.spec.js regression/javascript/components/CodeMirrorVimChanges.spec.js regression/javascript/components/CodeMirrorVimStatus.spec.js regression/javascript/components/CodeMirrorVimFolding.spec.js regression/javascript/components/CodeMirrorVimExLines.spec.js regression/javascript/components/CodeMirrorVimSurround.spec.js regression/javascript/components/CodeMirrorVimIntegration.spec.js regression/javascript/components/CodeMirror.spec.js regression/javascript/components/CodeMirrorCustomEditor.spec.js
+corepack yarn jest --runInBand --runTestsByPath regression/javascript/components/CodeMirrorVimCore.spec.js regression/javascript/components/CodeMirrorVimChanges.spec.js regression/javascript/components/CodeMirrorVimStatus.spec.js regression/javascript/components/CodeMirrorVimFolding.spec.js regression/javascript/components/CodeMirrorVimExLines.spec.js regression/javascript/components/CodeMirrorVimSurround.spec.js regression/javascript/components/CodeMirrorVimNumbers.spec.js regression/javascript/components/CodeMirrorVimPreferences.spec.js regression/javascript/components/CodeMirrorVimLifecycle.spec.js regression/javascript/sqleditor/vimQueryLifecycle.spec.js regression/javascript/components/CodeMirrorVimIntegration.spec.js regression/javascript/components/CodeMirror.spec.js regression/javascript/components/CodeMirrorCustomEditor.spec.js
 corepack yarn bundle
 ```
 

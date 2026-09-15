@@ -3601,10 +3601,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@replit/codemirror-vim-core@npm:^0.1.0":
+"@replit/codemirror-vim-core@npm:0.1.0":
   version: 0.1.0
   resolution: "@replit/codemirror-vim-core@npm:0.1.0"
   checksum: 10c0/29388ddbf0d60c0c32cdbf1939a5f3df276c71f0edea4df2468777c3cf57379f2ee256ab0cdef9de7eafc11f08d4a149a21df3cb4b04db91da82c83fcfb0c562
+  languageName: node
+  linkType: hard
+
+"@replit/codemirror-vim-core@patch:@replit/codemirror-vim-core@npm%3A0.1.0#~/.yarn/patches/@replit-codemirror-vim-core-npm-0.1.0-7657ec0c80.patch":
+  version: 0.1.0
+  resolution: "@replit/codemirror-vim-core@patch:@replit/codemirror-vim-core@npm%3A0.1.0#~/.yarn/patches/@replit-codemirror-vim-core-npm-0.1.0-7657ec0c80.patch::version=0.1.0&hash=6bc162"
+  checksum: 10c0/ca5245479000a9615e307d9ca570e3dcccac53431c2e0135f734df935ae3d94e08fedb4d23bd20648b2892aba9571ab614694783d175e5d78a8397d09ab69496
   languageName: node
   linkType: hard
 

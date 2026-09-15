@@ -62,6 +62,8 @@ import vimSave from '../extensions/vimSave';
 import vimExLines from '../extensions/vimExLines';
 import vimChanges from '../extensions/vimChanges';
 import vimKeys from '../extensions/vimKeys';
+import vimNumbers from '../extensions/vimNumbers';
+import vimPreferences from '../extensions/vimPreferences';
 
 const arrowRightHtml = ReactDOMServer.renderToString(<KeyboardArrowRightRoundedIcon style={{width: '16px', fill: 'currentcolor'}} />);
 const arrowDownHtml = ReactDOMServer.renderToString(<ExpandMoreRoundedIcon style={{width: '16px', fill: 'currentcolor'}} />);
@@ -177,7 +179,8 @@ export default function Editor({
   currEditor, name, value, options, onCursorActivity, onChange, readonly,
   disabled, autocomplete = false, autocompleteOnKeyPress, breakpoint = false, onBreakPointChange,
   showActiveLine=false, keepHistory = true, cid, helpid, labelledBy,
-  customKeyMap, language='pgsql', vimMode=false, vimShowStatus=true, onVimSave
+  customKeyMap, language='pgsql', vimMode=false, vimShowStatus=true, onVimSave,
+  onVimClose, onVimNavigate, vimConfig='', vimLeader=','
 }) {
   const checkIsMounted = useIsMounted();
 
@@ -444,12 +447,14 @@ export default function Editor({
         vimStatus(vimShowStatus),
         vimFolding(vimFoldEnabled),
         vimSurround(),
-        vimSave(onVimSave),
+        vimSave(onVimSave, onVimClose, onVimNavigate),
         vimExLines(),
         vimChanges(),
+        vimNumbers(),
+        vimPreferences(vimConfig, vimLeader),
       ] : []),
     });
-  }, [vimMode, vimShowStatus, vimFoldEnabled, onVimSave]);
+  }, [vimMode, vimShowStatus, vimFoldEnabled, onVimSave, onVimClose, onVimNavigate, vimConfig, vimLeader]);
 
   useMemo(() => {
     if (!checkIsMounted()) return;
@@ -501,4 +506,8 @@ Editor.propTypes = {
   vimMode: PropTypes.bool,
   vimShowStatus: PropTypes.bool,
   onVimSave: PropTypes.func,
+  onVimClose: PropTypes.func,
+  onVimNavigate: PropTypes.func,
+  vimConfig: PropTypes.string,
+  vimLeader: PropTypes.string,
 };

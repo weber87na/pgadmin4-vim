@@ -1,0 +1,21 @@
+diff --git a/vim.js b/vim.js
+index 3cafa6bcf0c99f2ae25a5da8936d3f29445f2d6d..e1f14851f4f63033dc0f00691bd5fe4f7d2bc7f0 100644
+--- a/vim.js
++++ b/vim.js
+@@ -3621,10 +3621,13 @@ export function initVim(CM) {
+     // sequence, so that the key buffer is not cleared.
+     if (inputState.operator) context = "operatorPending";
+     var match, partial = [], full = [];
+-    // if currently expanded key comes from a noremap, searcg only in default keys
+-    var startIndex = noremap ? keyMap.length - defaultKeymapLength : 0;
+-    for (var i = startIndex; i < keyMap.length; i++) {
++    // Nonrecursive mappings skip user key-to-key mappings, while retaining
++    // native actions/motions/operators registered by the embedding editor.
++    // Otherwise mapCommand extensions silently fall back to obsolete defaults.
++    var defaultsStart = keyMap.length - defaultKeymapLength;
++    for (var i = 0; i < keyMap.length; i++) {
+       var command = keyMap[i];
++      if (noremap && i < defaultsStart && command.type == 'keyToKey') continue;
+       if (context == 'insert' && command.context != 'insert' ||
+           (command.context && command.context != context) ||
+           inputState.operator && command.type == 'action' ||

@@ -7,14 +7,48 @@
 //
 //////////////////////////////////////////////////////////////
 
-import { EditorSelection, Facet, StateEffect, StateField } from '@codemirror/state';
+import { EditorSelection, EditorState, Facet, StateEffect, StateField } from '@codemirror/state';
 import {
-  codeFolding, ensureSyntaxTree, foldable, foldedRanges, foldEffect, unfoldEffect,
+  codeFolding, ensureSyntaxTree, foldable, foldedRanges, foldEffect, unfoldEffect, foldService,
 } from '@codemirror/language';
 import { Vim } from '@replit/codemirror-vim';
 import gettext from 'sources/gettext';
 
 const foldingEnabled = Facet.define({combine: values => values.some(Boolean)});
+const setMethod = StateEffect.define();
+const foldMethod = StateField.define({
+  create: () => 'syntax',
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setMethod)) value = effect.value;
+    }
+    return value;
+  },
+});
+const setManualFolds = StateEffect.define();
+function mapManualRanges(ranges, transaction) {
+  const mapped = ranges.map(range => ({
+    from: transaction.changes.mapPos(range.from, 1),
+    to: transaction.changes.mapPos(range.to, -1),
+  })).filter(range => range.from < range.to &&
+    transaction.newDoc.lineAt(range.from).number < transaction.newDoc.lineAt(range.to).number)
+    .map(range => ({
+      from: transaction.newDoc.lineAt(range.from).to,
+      to: transaction.newDoc.lineAt(range.to).to,
+    }));
+  return mapped.filter((range, index) => mapped.findIndex(item => item.from === range.from && item.to === range.to) === index);
+}
+const manualFolds = StateField.define({
+  create: () => [],
+  update(value, transaction) {
+    if (transaction.isUserEvent('document.replace')) return [];
+    if (transaction.docChanged) value = mapManualRanges(value, transaction);
+    for (const effect of transaction.effects) {
+      if (effect.is(setManualFolds)) value = effect.value;
+    }
+    return value;
+  },
+});
 const setLevel = StateEffect.define();
 const foldLevel = StateField.define({
   create: () => Infinity,
@@ -29,9 +63,9 @@ const suspendFolds = StateEffect.define();
 const suspendedFolds = StateField.define({
   create: () => null,
   update(value, transaction) {
-    if (transaction.isUserEvent('document.replace')) return null;
+    if (transaction.isUserEvent('document.replace')) return value === null ? null : [];
     if (value && transaction.docChanged) {
-      value = value.map(range => ({
+      value = transaction.startState.field(foldMethod) === 'manual' ? mapManualRanges(value, transaction) : value.map(range => ({
         from: transaction.changes.mapPos(range.from, 1),
         to: transaction.changes.mapPos(range.to, -1),
       })).filter(range => range.from < range.to);
@@ -41,6 +75,31 @@ const suspendedFolds = StateField.define({
     }
     return value;
   },
+});
+
+const maintainManualFolds = EditorState.transactionExtender.of(transaction => {
+  const state = transaction.state;
+  if (!state.facet(foldingEnabled)) return null;
+  // A persisted nofoldenable setting also covers gutter/API fold requests.
+  if (state.field(suspendedFolds) !== null) {
+    const closed = closedFolds(state);
+    return closed.length ? {effects: closed.map(range => unfoldEffect.of(range))} : null;
+  }
+  if (state.field(foldMethod) !== 'manual') return null;
+  const closed = closedFolds(state);
+  const previous = transaction.startState.field(manualFolds, false) || [];
+  const current = state.field(manualFolds);
+  const effects = [];
+  for (const range of closed) {
+    if (current.some(item => item.from === range.from && item.to === range.to)) continue;
+    effects.push(unfoldEffect.of(range));
+    if (!transaction.docChanged || transaction.isUserEvent('document.replace')) continue;
+    const old = previous.find(item => transaction.changes.mapPos(item.from, 1) === range.from &&
+      transaction.changes.mapPos(item.to, -1) === range.to);
+    const mapped = old && mapManualRanges([old], transaction)[0];
+    if (mapped) effects.push(foldEffect.of(mapped));
+  }
+  return effects.length ? {effects} : null;
 });
 
 function resumeFolds(view, preserveCursor = false) {
@@ -75,6 +134,9 @@ function outerFirst(a, b) {
 }
 
 function foldCandidates(state, line) {
+  if (state.field(foldMethod) === 'manual') {
+    return state.field(manualFolds).filter(range => onLine(range, line)).sort((a, b) => -outerFirst(a, b));
+  }
   const ranges = [];
   // Asking the language's fold service also handles PL/pgSQL BEGIN/IF/LOOP
   // blocks, which cannot be inferred from braces or indentation alone.
@@ -116,12 +178,17 @@ function openAt(line, closed, repeat) {
 }
 
 function allFolds(state) {
-  ensureSyntaxTree(state, state.doc.length, 100);
-  const ranges = [];
-  for (let number = 1; number <= state.doc.lines; number++) {
-    const line = state.doc.line(number);
-    const range = foldable(state, line.from, line.to);
-    if (range) ranges.push(range);
+  let ranges;
+  if (state.field(foldMethod) === 'manual') {
+    ranges = [...state.field(manualFolds)];
+  } else {
+    ensureSyntaxTree(state, state.doc.length, 100);
+    ranges = [];
+    for (let number = 1; number <= state.doc.lines; number++) {
+      const line = state.doc.line(number);
+      const range = foldable(state, line.from, line.to);
+      if (range) ranges.push(range);
+    }
   }
   const ancestors = [];
   return ranges.sort(outerFirst).map(range => {
@@ -236,6 +303,154 @@ function exFolding(cm, params, opening) {
   applyFolds(view, rangeFolds(view.state, start, end, opening, argument === '!'), opening);
 }
 
+function manualEditor(cm) {
+  const view = cm.cm6;
+  if (!view || !view.state.facet(foldingEnabled)) return;
+  if (view.state.field(foldMethod) !== 'manual') {
+    cm.openNotification(document.createTextNode(gettext('Manual folds require :set foldmethod=manual.')), {bottom: true});
+    return;
+  }
+  return view;
+}
+
+function createManualFold(cm, start, end) {
+  const view = manualEditor(cm);
+  if (!view || end <= start) return;
+  resumeFolds(view, true);
+  const state = view.state;
+  const existing = state.field(manualFolds);
+  let range = {from: state.doc.line(start).to, to: state.doc.line(end).to};
+  // Folds may nest but cannot cross. Expand a partially overlapping fold to
+  // contain the existing fold, preserving its independently openable child.
+  let expanded;
+  do {
+    expanded = false;
+    for (const item of existing) {
+      if (range.from <= item.to && item.from <= range.to && !contains(range, item) && !contains(item, range)) {
+        range = {from: Math.min(range.from, item.from), to: Math.max(range.to, item.to)};
+        expanded = true;
+      }
+    }
+  } while (expanded);
+  const updated = existing.some(item => item.from === range.from && item.to === range.to)
+    ? existing : [...existing, range].sort(outerFirst);
+  applyFolds(view, [range], false, [setManualFolds.of(updated)]);
+  return {line: state.doc.lineAt(range.from).number - 1, ch: 0};
+}
+
+function manualFoldOperator(cm, _args, ranges, oldAnchor) {
+  if (!manualEditor(cm)) return oldAnchor;
+  const state = cm.cm6.state;
+  let first = state.doc.lines;
+  let last = 1;
+  for (const range of ranges) {
+    const from = cm.indexFromPos(range.anchor);
+    const to = cm.indexFromPos(range.head);
+    first = Math.min(first, state.doc.lineAt(Math.min(from, to)).number);
+    last = Math.max(last, state.doc.lineAt(Math.max(Math.min(from, to), Math.max(from, to) - 1)).number);
+  }
+  return createManualFold(cm, first, last) || oldAnchor;
+}
+
+function manualFoldAction(cm, args) {
+  const view = manualEditor(cm);
+  if (!view) return;
+  const selection = cm.state.vim.sel;
+  const visual = cm.state.vim.visualMode;
+  const start = visual ? Math.min(selection.anchor.line, selection.head.line) + 1 : cm.getCursor().line + 1;
+  let end = visual ? Math.max(selection.anchor.line, selection.head.line) + 1
+    : Math.min(view.state.doc.lines, start + Math.max(1, args.repeat || 1) - 1);
+  if (visual) Vim.exitVisualMode(cm);
+  if (args.operation === 'create') {
+    createManualFold(cm, start, end);
+    return;
+  }
+  const existing = view.state.field(manualFolds);
+  let removed = [];
+  if (args.operation === 'erase') {
+    removed = existing;
+  } else {
+    if (!visual) end = start;
+    const closed = [...closedFolds(view.state), ...(view.state.field(suspendedFolds) || [])];
+    for (let number = start; number <= end; number++) {
+      const line = view.state.doc.line(number);
+      for (let count = 0; count < (visual ? 1 : Math.max(1, args.repeat || 1)); count++) {
+        const candidates = existing.filter(range => onLine(range, line) && !removed.includes(range));
+        // On a closed fold header, remove that displayed fold. Inside open
+        // nested folds, zd removes the innermost fold first.
+        const displayed = candidates.filter(range => closed.some(item => item.from === range.from && item.to === range.to)).sort(outerFirst)[0];
+        const target = displayed || candidates.sort((a, b) => -outerFirst(a, b))[0];
+        if (!target) break;
+        if (args.operation === 'deleteRecursive') removed.push(...existing.filter(range => contains(target, range)));
+        else removed.push(target);
+        number = Math.max(number, view.state.doc.lineAt(target.to).number);
+      }
+    }
+  }
+  const saved = view.state.field(suspendedFolds);
+  applyFolds(view, removed, true, [
+    setManualFolds.of(existing.filter(range => !removed.includes(range))),
+    ...(saved ? [suspendFolds.of(saved.filter(range => !removed.some(item => item.from === range.from && item.to === range.to)))] : []),
+  ]);
+}
+
+function exManualFold(cm, params) {
+  const view = manualEditor(cm);
+  if (!view) return;
+  const start = (params.selectionLine ?? cm.getCursor().line) + 1;
+  const end = (params.selectionLineEnd ?? start - 1) + 1;
+  if (![start, end].every(Number.isSafeInteger) || start < 1 || end < start || end > view.state.doc.lines || params.argString?.trim()) {
+    cm.openNotification(document.createTextNode(gettext('Invalid fold range or argument. Use :[range]fold.')), {bottom: true});
+    return;
+  }
+  createManualFold(cm, start, end);
+}
+
+function setLocalLevel(view, level) {
+  const ranges = allFolds(view.state).filter(range => range.depth > level);
+  if (view.state.field(suspendedFolds) !== null) {
+    view.dispatch({effects: [setLevel.of(level), suspendFolds.of(ranges)]});
+  } else {
+    applyFolds(view, ranges, false, [setLevel.of(level), ...closedFolds(view.state).map(range => unfoldEffect.of(range))]);
+  }
+}
+
+function registerFoldOptions() {
+  Vim.defineOption('foldmethod', 'syntax', 'string', ['fdm'], (value, cm) => {
+    const view = cm?.cm6;
+    if (value === undefined) return view?.state.field(foldMethod, false) || 'syntax';
+    if (!view?.state.facet(foldingEnabled)) return;
+    if (!['manual', 'syntax'].includes(value)) {
+      cm.openNotification(document.createTextNode(gettext('foldmethod must be manual or syntax.')), {bottom: true});
+      return;
+    }
+    if (view.state.field(foldMethod) === value) return;
+    const saved = view.state.field(suspendedFolds);
+    view.dispatch({effects: [setMethod.of(value), suspendFolds.of(saved === null ? null : []),
+      ...closedFolds(view.state).map(range => unfoldEffect.of(range))]});
+    setLocalLevel(view, view.state.field(foldLevel));
+  });
+  Vim.defineOption('foldlevel', 99, 'number', ['fdl'], (value, cm) => {
+    const view = cm?.cm6;
+    if (value === undefined) {
+      const level = view?.state.field(foldLevel, false);
+      return Number.isFinite(level) ? level : 99;
+    }
+    if (!view?.state.facet(foldingEnabled)) return;
+    if (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value))) {
+      cm.openNotification(document.createTextNode(gettext('foldlevel must be a non-negative integer.')), {bottom: true});
+      return;
+    }
+    setLocalLevel(view, Number(value));
+  });
+  Vim.defineOption('foldenable', true, 'boolean', ['fen'], (value, cm) => {
+    const view = cm?.cm6;
+    if (value === undefined) return !view || view.state.field(suspendedFolds, false) == null;
+    if (!view?.state.facet(foldingEnabled)) return;
+    runFolding(cm, {operation: value ? 'enable' : 'disable'});
+  });
+}
+
 function runFolding(cm, args) {
   const view = cm.cm6;
   if (!view || !view.state.facet(foldingEnabled)) return;
@@ -336,6 +551,16 @@ function moveFold(cm, head, args) {
 /** Add the Vim fold commands missing from codemirror-vim-core 0.1.0. */
 export default function vimFolding(enabled = true) {
   if (!registered) {
+    registerFoldOptions();
+    Vim.defineOperator('pgadminManualFold', manualFoldOperator);
+    Vim.mapCommand('zf', 'operator', 'pgadminManualFold', {linewise: true}, {context: 'normal'});
+    Vim.defineAction('pgadminManualFoldAction', manualFoldAction);
+    Vim.mapCommand('zf', 'action', 'pgadminManualFoldAction', {operation: 'create'}, {context: 'visual'});
+    for (const [keys, operation] of Object.entries({zF: 'create', zd: 'delete', zD: 'deleteRecursive', zE: 'erase'})) {
+      Vim.mapCommand(keys, 'action', 'pgadminManualFoldAction', {operation}, {context: 'normal'});
+      Vim.mapCommand(keys, 'action', 'pgadminManualFoldAction', {operation}, {context: 'visual'});
+    }
+    Vim.defineEx('fold', 'fo', exManualFold);
     Vim.defineAction('pgadminFold', runFolding);
     Vim.defineMotion('pgadminFoldMotion', moveFold);
     for (const [keys, operation] of Object.entries({'[z': 'start', ']z': 'end', zj: 'next', zk: 'previous'})) {
@@ -364,5 +589,9 @@ export default function vimFolding(enabled = true) {
   }
   // Vim's command registry is shared, but each action is enabled only in
   // editors that install this extension. Folding also works in read-only SQL.
-  return [foldingEnabled.of(enabled), enabled ? [codeFolding(), foldLevel, suspendedFolds] : []];
+  return [foldingEnabled.of(enabled), enabled ? [codeFolding(), foldMethod, manualFolds, foldLevel, suspendedFolds, maintainManualFolds,
+    foldService.of((state, from, to) => state.field(foldMethod) === 'manual'
+      ? state.field(manualFolds).filter(range => range.from >= from && range.from <= to).sort(outerFirst)[0]
+      : null),
+  ] : []];
 }

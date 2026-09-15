@@ -49,6 +49,7 @@ describe('Query editor Vim integration', () => {
   }
 
   beforeEach(() => {
+    Vim.resetVimGlobalState_();
     previousPreferences = usePreferences.getState().data;
     const editorPrefs = {
       tab_size: 4,
@@ -192,6 +193,88 @@ describe('Query editor Vim integration', () => {
     const editor = mountEditor({onVimSave: save, disabled: true});
     ex(editor.view, 'w');
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('routes close requests to the current Query Tool callback after reconfiguration', () => {
+    const firstClose = jest.fn();
+    const secondClose = jest.fn();
+    const updatedClose = jest.fn();
+    const first = mountEditor({onVimClose: firstClose});
+    const second = mountEditor({onVimClose: secondClose});
+    ex(first.view, 'q');
+    expect(firstClose).toHaveBeenCalledWith(first.view);
+    expect(secondClose).not.toHaveBeenCalled();
+    first.rerender({onVimClose: updatedClose, vimShowStatus: false});
+    ex(first.view, 'q');
+    expect(updatedClose).toHaveBeenCalledWith(first.view);
+    ex(second.view, 'q');
+    expect(secondClose).toHaveBeenCalledWith(second.view);
+  });
+
+  it('keeps the Query Tool open until its save callback confirms success', async () => {
+    let complete;
+    const close = jest.fn();
+    const save = jest.fn(() => new Promise(resolve => { complete = resolve; }));
+    const editor = mountEditor({onVimSave: save, onVimClose: close});
+    ex(editor.view, 'wq');
+    expect(save).toHaveBeenCalledWith(editor.view);
+    expect(close).not.toHaveBeenCalled();
+    await act(async () => { complete(false); });
+    expect(close).not.toHaveBeenCalled();
+    ex(editor.view, 'wq');
+    await act(async () => { complete(true); });
+    expect(close).toHaveBeenCalledWith(editor.view);
+  });
+
+  it('integrates Visual numeric sequences and exact integers in the Query Tool', () => {
+    const editor = mountEditor({value: '9007199254740992\n9007199254740992\n9007199254740992'});
+    keys(editor.view, ['g', 'g', 'V', 'G', 'g', '<C-a>']);
+    expect(editor.view.getValue()).toBe('9007199254740993\n9007199254740994\n9007199254740995');
+    keys(editor.view, ['u']);
+    expect(editor.view.getValue()).toBe('9007199254740992\n9007199254740992\n9007199254740992');
+  });
+
+  it.each(['readonly', 'disabled'])('protects numeric edits when the Query Tool is %s', property => {
+    const editor = mountEditor({value: '10\n20', [property]: true});
+    keys(editor.view, ['<C-a>', 'V', 'G', 'g', '<C-x>']);
+    expect(editor.view.getValue()).toBe('10\n20');
+  });
+
+  it('applies and removes saved mappings without changing another Query Tool', async () => {
+    const first = mountEditor({value: 'alpha', vimConfig: 'nnoremap <Leader>d x'});
+    const second = mountEditor({value: 'beta'});
+    await act(async () => {});
+    keys(first.view, [',', 'd']);
+    expect(first.view.getValue()).toBe('lpha');
+    keys(second.view, [',', 'd', '<Esc>']);
+    expect(second.view.getValue()).toBe('beta');
+    first.rerender({vimConfig: ''});
+    await act(async () => {});
+    keys(first.view, [',', 'd', '<Esc>']);
+    expect(first.view.getValue()).toBe('lpha');
+  });
+
+  it('creates manual folds in a read-only Query Tool and clears them on document replacement', () => {
+    const editor = mountEditor({value: 'one\ntwo\nthree\nfour', readonly: true});
+    ex(editor.view, 'set fdm=manual');
+    keys(editor.view, ['3', 'z', 'F']);
+    expect(foldedRanges(editor.view.state).size).toBe(1);
+    expect(editor.view.getValue()).toBe('one\ntwo\nthree\nfour');
+    editor.rerender({vimShowStatus: false});
+    expect(foldedRanges(editor.view.state).size).toBe(1);
+    editor.rerender({value: 'new\nquery'});
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+    keys(editor.view, ['z', 'M']);
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+  });
+
+  it('supports Tab as both a mapping target and a configurable physical key', () => {
+    const editor = mountEditor({vimConfig: 'nnoremap Q <Tab>'});
+    keys(editor.view, ['G', '<C-o>', 'Q']);
+    expect(editor.view.getCursor().line).toBe(2);
+    editor.rerender({vimConfig: 'nnoremap <Tab> x'});
+    fireEvent.keyDown(editor.view.contentDOM, {key: 'Tab', code: 'Tab', keyCode: 9});
+    expect(editor.view.getValue()).toBe('SELECT 1;\nELECT 2;');
   });
 
   it('keeps application function keys available and gives Vim ownership of Normal keys', () => {

@@ -25,6 +25,7 @@ import PropTypes from 'prop-types';
 import { useApplicationState } from '../../../../../../settings/static/ApplicationStateProvider';
 import { useDelayDebounce } from '../../../../../../static/js/custom_hooks';
 import { FileManagerUtils } from '../../../../../../misc/file_manager/static/js/components/FileManager';
+import { saveQueryFile } from '../vimQueryLifecycle';
 
 
 async function registerAutocomplete(editor, api, transId) {
@@ -61,9 +62,13 @@ export default function Query({onTextSelect, setQtStatePartial}) {
   const editor = React.useRef();
   const eventBus = useContext(QueryToolEventsContext);
   const saveVimQuery = useCallback(() => {
-    eventBus.fireEvent(QUERY_TOOL_EVENTS.TRIGGER_SAVE_FILE);
+    return new Promise(resolve => eventBus.fireEvent(QUERY_TOOL_EVENTS.TRIGGER_SAVE_FILE, false, resolve));
+  }, [eventBus]);
+  const closeVimQuery = useCallback(() => {
+    eventBus.fireEvent(QUERY_TOOL_EVENTS.WARN_SAVE_DATA_CLOSE);
   }, [eventBus]);
   const queryToolCtx = useContext(QueryToolContext);
+  const navigateVimQuery = useCallback((_view, request) => queryToolCtx.navigateQueryTab?.(request) ?? false, [queryToolCtx.navigateQueryTab]);
   const layoutDocker = useContext(LayoutDockerContext);
   const lastCursorPos = React.useRef();
   const pgAdmin = usePgAdmin();
@@ -214,19 +219,9 @@ export default function Query({onTextSelect, setQtStatePartial}) {
       }
     } );
 
-    eventBus.registerListener(QUERY_TOOL_EVENTS.SAVE_FILE, (fileName)=>{
-      queryToolCtx.api.post(url_for('file_manager.save_file'), {
-        'file_name': decodeURI(fileName),
-        'file_content': editor.current.getValue(false, true),
-      }).then(()=>{
-        editor.current.markClean();
-        eventBus.fireEvent(QUERY_TOOL_EVENTS.SAVE_FILE_DONE, fileName, true);
-        pgAdmin.Browser.notifier.success(gettext('File saved successfully.'));
-      }).catch((err)=>{
-        eventBus.fireEvent(QUERY_TOOL_EVENTS.SAVE_FILE_DONE, null, false);
-        eventBus.fireEvent(QUERY_TOOL_EVENTS.HANDLE_API_ERROR, err);
-      });
-    });
+    eventBus.registerListener(QUERY_TOOL_EVENTS.SAVE_FILE, (fileName, onComplete) => saveQueryFile({
+      api: queryToolCtx.api, editor, eventBus, notifier: pgAdmin.Browser.notifier,
+    }, fileName, onComplete));
 
     eventBus.registerListener(QUERY_TOOL_EVENTS.COPY_TO_EDITOR, (text)=>{
       editor.current?.setValue(text);
@@ -302,12 +297,11 @@ export default function Query({onTextSelect, setQtStatePartial}) {
             eventBus.fireEvent(QUERY_TOOL_EVENTS.WARN_TXN_CLOSE);
           }}
           onSave={()=>{
-            eventBus.registerListener(QUERY_TOOL_EVENTS.SAVE_FILE_DONE, (_f, success)=>{
+            eventBus.fireEvent(QUERY_TOOL_EVENTS.TRIGGER_SAVE_FILE, false, success => {
               if(success) {
                 eventBus.fireEvent(QUERY_TOOL_EVENTS.WARN_TXN_CLOSE);
               }
-            }, true);
-            eventBus.fireEvent(QUERY_TOOL_EVENTS.TRIGGER_SAVE_FILE);
+            });
           }}
         />
       ), {id:modalId});
@@ -532,7 +526,11 @@ export default function Query({onTextSelect, setQtStatePartial}) {
     onTextSelect={onTextSelect}
     vimMode={queryToolCtx.preferences?.sqleditor?.vim_mode ?? false}
     vimShowStatus={queryToolCtx.preferences?.sqleditor?.vim_show_status ?? true}
+    vimConfig={queryToolCtx.preferences?.sqleditor?.vim_config ?? ''}
+    vimLeader={queryToolCtx.preferences?.sqleditor?.vim_leader ?? ','}
     onVimSave={saveVimQuery}
+    onVimClose={closeVimQuery}
+    onVimNavigate={navigateVimQuery}
     disabled={queryToolCtx.editor_disabled}
   />;
 }

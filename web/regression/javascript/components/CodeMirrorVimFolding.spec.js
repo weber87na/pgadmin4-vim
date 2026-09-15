@@ -11,7 +11,7 @@ import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { history } from '@codemirror/commands';
 import { json } from '@codemirror/lang-json';
-import { codeFolding, foldedRanges } from '@codemirror/language';
+import { codeFolding, foldEffect, foldedRanges } from '@codemirror/language';
 import { getCM, Vim, vim } from '@replit/codemirror-vim';
 import vimFolding from 'sources/components/ReactCodeMirror/extensions/vimFolding';
 import plpgsqlFoldService from 'sources/components/ReactCodeMirror/extensions/plpgsqlFoldService';
@@ -44,7 +44,7 @@ describe('Vim folding', () => {
     foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => {
       ranges.push({from, to});
     });
-    return ranges;
+    return ranges.sort((a, b) => a.from - b.from || b.to - a.to);
   }
 
   beforeEach(() => {
@@ -672,6 +672,199 @@ describe('Vim folding', () => {
     expect(foldLines(readonly)).toEqual([2, 5]);
     keys(disabled, 'znzNziVGzA');
     expect(foldLines(disabled)).toEqual([]);
+  });
+
+  const plainLines = 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight';
+  function manual(options = {}) {
+    const view = create({doc: plainLines, ...options});
+    ex(view, 'setlocal fdm=manual');
+    return view;
+  }
+
+  it.each(['zf3G', '3zF', 'V3Gzf', 'v3Gzf', '<C-v>3Gzf'])('creates a manual line fold with %s', input => {
+    const view = manual();
+    keys(view, input);
+    expect(folds(view)).toEqual([{from: 3, to: 13}]);
+    expect(cursorLine(view)).toBe(1);
+    expect(getCM(view).state.vim.visualMode).toBe(false);
+    expect(view.state.doc.toString()).toBe(plainLines);
+    keys(view, 'zozc');
+    expect(folds(view)).toEqual([{from: 3, to: 13}]);
+  });
+
+  it('supports reverse motion, counts and text objects for manual folds', () => {
+    const view = manual();
+    keys(view, '4Gzf2G');
+    expect(folds(view)).toEqual([{from: 7, to: 18}]);
+    keys(view, 'zEgg5zfG');
+    expect(folds(view)).toEqual([{from: 3, to: 23}]);
+    keys(view, 'zEggzfip');
+    expect(folds(view)).toEqual([{from: 3, to: plainLines.length}]);
+  });
+
+  it('requires manual method for creation without changing document text', () => {
+    const view = create();
+    keys(view, 'zf3G');
+    expect(folds(view)).toEqual([]);
+    expect(view.dom.textContent).toContain('foldmethod=manual');
+    expect(view.state.doc.toString()).toBe(documentText);
+  });
+
+  it('creates Ex ranges and maintains nesting for single and recursive deletion', () => {
+    const view = manual();
+    ex(view, '2,3fold');
+    ex(view, '1,5fo');
+    ex(view, '6,8fold');
+    expect(foldLines(view)).toEqual([1, 2, 6]);
+    keys(view, 'ggzd');
+    expect(foldLines(view)).toEqual([2, 6]);
+    keys(view, 'zRzM');
+    expect(foldLines(view)).toEqual([2, 6]);
+    ex(view, '1,5fold');
+    keys(view, 'ggzD');
+    expect(foldLines(view)).toEqual([6]);
+    keys(view, 'zEzM');
+    expect(foldLines(view)).toEqual([]);
+  });
+
+  it('deletes counted open levels and Visual ranges while preserving unrelated folds', () => {
+    const view = manual();
+    ex(view, '2,3fold');
+    ex(view, '1,5fold');
+    ex(view, '6,8fold');
+    keys(view, 'zR2G2zdzM');
+    expect(foldLines(view)).toEqual([6]);
+    ex(view, '1,3fold');
+    keys(view, 'ggVGzD');
+    keys(view, 'zM');
+    expect(foldLines(view)).toEqual([]);
+  });
+
+  it('keeps temporary disable, foldlevel, aliases and foldmethod local to each editor', () => {
+    const first = manual();
+    const second = create();
+    ex(first, '2,3fold');
+    ex(first, '1,5fold');
+    ex(first, 'set nofen');
+    expect(foldLines(first)).toEqual([]);
+    expect(Vim.getOption('foldenable', getCM(first))).toBe(false);
+    ex(first, 'set fdl=1');
+    expect(foldLines(first)).toEqual([]);
+    ex(first, 'set fen');
+    expect(foldLines(first)).toEqual([2]);
+    expect(Vim.getOption('foldlevel', getCM(first))).toBe(1);
+    expect(Vim.getOption('foldmethod', getCM(second))).toBe('syntax');
+    expect(Vim.getOption('foldlevel', getCM(second))).toBe(99);
+    expect(Vim.getOption('foldenable', getCM(second))).toBe(true);
+    ex(first, 'set foldmethod=syntax');
+    expect(foldLines(first)).toEqual([]);
+    ex(first, 'set foldmethod=manual');
+    expect(foldLines(first)).toEqual([2]);
+  });
+
+  it.each(['set fdm=indent', 'set fdl=-1', 'set fdl=hello', 'set fdl=1.5', '0fold', '99fold', '4,2fold', 'fold garbage'])('rejects invalid manual setting or range %s', command => {
+    const view = manual();
+    keys(view, '3zF');
+    ex(view, command);
+    expect(folds(view)).toEqual([{from: 3, to: 13}]);
+    expect(view.state.doc.toString()).toBe(plainLines);
+  });
+
+  it('maps manual definitions and suspended folds through document edits', () => {
+    const view = manual();
+    keys(view, '3zFzn');
+    view.dispatch({changes: {from: 0, insert: 'intro\n'}});
+    keys(view, 'zN');
+    expect(folds(view)).toEqual([{from: 9, to: 19}]);
+    keys(view, 'zRzM');
+    expect(folds(view)).toEqual([{from: 9, to: 19}]);
+    keys(view, 'zn');
+    view.dispatch({changes: {from: 0, to: 20}});
+    keys(view, 'zNzM');
+    expect(foldLines(view)).toEqual([]);
+  });
+
+  it('keeps manual definitions aligned with closed ranges after header and end-line edits', () => {
+    const view = manual();
+    keys(view, '3zF');
+    view.dispatch({changes: {from: view.state.doc.line(1).to, insert: ' header'}});
+    view.dispatch({changes: {from: view.state.doc.line(3).to, insert: ' tail'}});
+    const expected = [{from: view.state.doc.line(1).to, to: view.state.doc.line(3).to}];
+    expect(folds(view)).toEqual(expected);
+    keys(view, 'zO');
+    expect(folds(view)).toEqual([]);
+    keys(view, 'zc');
+    expect(folds(view)).toEqual(expected);
+    keys(view, 'zn');
+    view.dispatch({changes: {from: view.state.doc.line(3).to, insert: ' again'}});
+    keys(view, 'zN');
+    expect(folds(view)).toEqual([{from: view.state.doc.line(1).to, to: view.state.doc.line(3).to}]);
+  });
+
+  it('honors nofoldenable for API fold requests until explicitly enabled', () => {
+    const view = manual();
+    keys(view, '3zF');
+    ex(view, 'set nofoldenable');
+    view.dispatch({effects: foldEffect.of({from: 3, to: 13})});
+    expect(foldLines(view)).toEqual([]);
+    expect(Vim.getOption('foldenable', getCM(view))).toBe(false);
+    ex(view, 'set foldenable');
+    expect(foldLines(view)).toEqual([1]);
+  });
+
+  it('removes deleted manual definitions and never reuses them for a replacement document', () => {
+    const view = manual();
+    keys(view, '3zF');
+    view.dispatch({changes: {from: 0, to: view.state.doc.length, insert: plainLines}, userEvent: 'document.replace'});
+    keys(view, 'zM');
+    expect(foldLines(view)).toEqual([]);
+    expect(Vim.getOption('foldmethod', getCM(view))).toBe('manual');
+  });
+
+  it('preserves local fold options while clearing replacement-document fold snapshots', () => {
+    const view = manual();
+    keys(view, '3zF');
+    ex(view, 'set fdl=0');
+    ex(view, 'set nofen');
+    view.dispatch({changes: {from: 0, to: view.state.doc.length, insert: plainLines}, userEvent: 'document.replace'});
+    expect(Vim.getOption('foldlevel', getCM(view))).toBe(0);
+    expect(Vim.getOption('foldenable', getCM(view))).toBe(false);
+    view.dispatch({effects: foldEffect.of({from: 3, to: 13})});
+    expect(foldLines(view)).toEqual([]);
+    keys(view, 'zN');
+    expect(foldLines(view)).toEqual([]);
+  });
+
+  it('deletes suspended manual definitions before restoring folds', () => {
+    const view = manual();
+    keys(view, '3zFznzdzN');
+    expect(foldLines(view)).toEqual([]);
+    keys(view, 'zM');
+    expect(foldLines(view)).toEqual([]);
+  });
+
+  it('supports manual folding on readonly editors without text undo entries', () => {
+    const readonly = manual({extensions: [vim(), vimFolding(), EditorState.readOnly.of(true)]});
+    keys(readonly, 'zf3G');
+    expect(foldLines(readonly)).toEqual([1]);
+    keys(readonly, 'zD');
+    expect(foldLines(readonly)).toEqual([]);
+    expect(readonly.state.doc.toString()).toBe(plainLines);
+    const editable = manual({extensions: [history(), vim(), vimFolding()]});
+    keys(editable, 'x3zFzD');
+    keys(editable, 'u');
+    expect(editable.state.doc.toString()).toBe(plainLines);
+  });
+
+  it('drops manual definitions when Vim is removed and reconfigured', () => {
+    const mode = new Compartment();
+    const view = manual({extensions: [json(), mode.of([vim(), vimFolding()])]});
+    keys(view, '3zF');
+    view.dispatch({effects: mode.reconfigure([])});
+    view.dispatch({effects: mode.reconfigure([vim(), vimFolding()])});
+    ex(view, 'set fdm=manual');
+    keys(view, 'zM');
+    expect(foldLines(view)).toEqual([]);
   });
 
 });

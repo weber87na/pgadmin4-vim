@@ -229,6 +229,34 @@ def register_query_tool_preferences(self):
         )
     )
 
+    self.vim_leader = self.preference.register(
+        'Editor', 'vim_leader',
+        gettext("Vim leader key"), 'text', ',',
+        category_label=PREF_LABEL_EDITOR,
+        control_props={'maxLength': 16},
+        help_str=gettext(
+            'A single key used for <Leader> in Vim mappings. Use a character '
+            'such as comma, or <Space>. Changes take effect immediately.'
+        )
+    )
+
+    self.vim_config = self.preference.register(
+        'Editor', 'vim_config',
+        gettext("Vim configuration"), 'multiline', '',
+        category_label=PREF_LABEL_EDITOR,
+        allow_blanks=True,
+        control_props={'rows': 8},
+        help_str=gettext(
+            'Persistent Vim settings, one command per line: set, nnoremap, '
+            'vnoremap, inoremap, nunmap, vunmap, iunmap, or unmap. Lines '
+            'starting with a double quote are comments. Supported options: '
+            'textwidth, nrformats, foldmethod, foldlevel, and '
+            'foldenable. Example: nnoremap <Leader>w :w<CR>. Invalid '
+            'configuration is reported below the SQL editor. Arbitrary '
+            'Vimscript is not supported.'
+        )
+    )
+
     self.open_file_in_new_tab = self.preference.register(
         'Options', 'open_in_new_tab',
         gettext("Open the file in a new tab?"), 'boolean',

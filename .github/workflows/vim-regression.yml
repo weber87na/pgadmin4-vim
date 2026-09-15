@@ -6,18 +6,26 @@ on:
     paths:
       - 'web/pgadmin/static/js/components/ReactCodeMirror/**'
       - 'web/pgadmin/tools/sqleditor/static/js/components/sections/Query.jsx'
+      - 'web/pgadmin/tools/sqleditor/static/js/**'
+      - 'web/pgadmin/tools/sqleditor/utils/query_tool_preferences.py'
       - 'web/regression/javascript/components/CodeMirror*'
+      - 'web/regression/javascript/sqleditor/vimQueryLifecycle.spec.js'
       - 'web/package.json'
       - 'web/yarn.lock'
+      - 'web/.yarn/patches/**'
       - '.github/workflows/vim-regression.yml'
   push:
     branches: [main]
     paths:
       - 'web/pgadmin/static/js/components/ReactCodeMirror/**'
       - 'web/pgadmin/tools/sqleditor/static/js/components/sections/Query.jsx'
+      - 'web/pgadmin/tools/sqleditor/static/js/**'
+      - 'web/pgadmin/tools/sqleditor/utils/query_tool_preferences.py'
       - 'web/regression/javascript/components/CodeMirror*'
+      - 'web/regression/javascript/sqleditor/vimQueryLifecycle.spec.js'
       - 'web/package.json'
       - 'web/yarn.lock'
+      - 'web/.yarn/patches/**'
       - '.github/workflows/vim-regression.yml'
   workflow_dispatch:
 
@@ -49,9 +57,13 @@ jobs:
         run: >-
           corepack yarn eslint -c .eslintrc.js
           pgadmin/static/js/components/ReactCodeMirror/components/Editor.jsx
+          pgadmin/static/js/components/ReactCodeMirror/CustomEditorView.js
           pgadmin/static/js/components/ReactCodeMirror/extensions/vim*.js
           pgadmin/tools/sqleditor/static/js/components/sections/Query.jsx
+          pgadmin/tools/sqleditor/static/js/components/QueryToolComponent.jsx
+          pgadmin/tools/sqleditor/static/js/components/vimQueryLifecycle.js
           regression/javascript/components/CodeMirrorVim*.spec.js
+          regression/javascript/sqleditor/vimQueryLifecycle.spec.js
       - name: Run Vim and editor regression tests
         run: >-
           corepack yarn jest --runInBand --runTestsByPath
@@ -61,6 +73,10 @@ jobs:
           regression/javascript/components/CodeMirrorVimFolding.spec.js
           regression/javascript/components/CodeMirrorVimExLines.spec.js
           regression/javascript/components/CodeMirrorVimSurround.spec.js
+          regression/javascript/components/CodeMirrorVimNumbers.spec.js
+          regression/javascript/components/CodeMirrorVimPreferences.spec.js
+          regression/javascript/components/CodeMirrorVimLifecycle.spec.js
+          regression/javascript/sqleditor/vimQueryLifecycle.spec.js
           regression/javascript/components/CodeMirrorVimIntegration.spec.js
           regression/javascript/components/CodeMirror.spec.js
           regression/javascript/components/CodeMirrorCustomEditor.spec.js
