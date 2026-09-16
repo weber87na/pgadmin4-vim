@@ -74,6 +74,12 @@ jobs:
           regression/javascript/components/CodeMirrorVimExLines.spec.js
           regression/javascript/components/CodeMirrorVimSurround.spec.js
           regression/javascript/components/CodeMirrorVimNumbers.spec.js
+          regression/javascript/components/CodeMirrorVimSearch.spec.js
+          regression/javascript/components/CodeMirrorVimPaste.spec.js
+          regression/javascript/components/CodeMirrorVimTextObjects.spec.js
+          regression/javascript/components/CodeMirrorVimExEditing.spec.js
+          regression/javascript/components/CodeMirrorVimInsert.spec.js
+          regression/javascript/components/CodeMirrorVimInsertReplay.spec.js
           regression/javascript/components/CodeMirrorVimPreferences.spec.js
           regression/javascript/components/CodeMirrorVimLifecycle.spec.js
           regression/javascript/sqleditor/vimQueryLifecycle.spec.js

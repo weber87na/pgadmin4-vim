@@ -1,8 +1,142 @@
 diff --git a/vim.js b/vim.js
-index 3cafa6bcf0c99f2ae25a5da8936d3f29445f2d6d..e1f14851f4f63033dc0f00691bd5fe4f7d2bc7f0 100644
+index 3cafa6bcf0c99f2ae25a5da8936d3f29445f2d6d..1f2d6a9c75cc1f3ee725a22d18244121ebe34695 100644
 --- a/vim.js
 +++ b/vim.js
-@@ -3621,10 +3621,13 @@ export function initVim(CM) {
+@@ -333,8 +333,10 @@ export function initVim(CM) {
+     cm.off('cursorActivity', onCursorActivity);
+     // @ts-ignore
+     CM.off(cm.getInputField(), 'paste', getOnPasteFn(cm));
++    if (cm.state.vim && cm.state.vim.searchState_) {
++      clearTimeout(cm.state.vim.searchState_.highlightTimeout);
++    }
+     cm.state.vim = null;
+-    if (highlightTimeout) clearTimeout(highlightTimeout);
+   }
+ 
+   /** @arg {CodeMirrorV} cm */
+@@ -883,6 +885,7 @@ export function initVim(CM) {
+     setOption: setOption,
+     getOption: getOption,
+     defineOption: defineOption,
++    refreshSearchOptions: refreshSearchOptions,
+     /**@type {(name: string, prefix: string|undefined, func: ExFn) => void} */
+     defineEx: function(name, prefix, func){
+       if (!prefix) {
+@@ -1752,7 +1755,15 @@ export function initVim(CM) {
+       }
+       var forward = command.searchArgs.forward;
+       var wholeWordOnly = command.searchArgs.wholeWordOnly;
+-      getSearchState(cm).setReversed(!forward);
++      var searchState = getSearchState(cm);
++      var originalReversed = searchState.isReversed();
++      var originalRawQuery = searchState.rawQuery;
++      var originalSmartCase = searchState.smartCaseAllowed;
++      var originalSearchRegister = vimGlobalState.registerController.getRegister('/').toString();
++      var originalSelections = cm.listSelections();
++      var originalVimSelection = {anchor: copyCursor(vim.sel.anchor), head: copyCursor(vim.sel.head)};
++      var originalHighlight = !!searchState.getOverlay();
++      searchState.setReversed(!forward);
+       var promptPrefix = (forward) ? '/' : '?';
+       var originalQuery = getSearchState(cm).getQuery();
+       var originalScrollPos = cm.getScrollInfo();
+@@ -1775,8 +1786,20 @@ export function initVim(CM) {
+           motionArgs: { forward: true, toJumplist: command.searchArgs.toJumplist }
+         });
+       }
++      function restoreQuery() {
++        searchState.setQuery(originalQuery);
++        searchState.rawQuery = originalRawQuery;
++        searchState.smartCaseAllowed = originalSmartCase;
++        vimGlobalState.registerController.getRegister('/').setText(originalSearchRegister);
++      }
++      function restoreSelection() {
++        cm.setSelections(originalSelections);
++        vim.sel = {anchor: copyCursor(originalVimSelection.anchor), head: copyCursor(originalVimSelection.head)};
++      }
+       /** @arg {string} query */
+       function onPromptClose(query) {
++        restoreQuery();
++        restoreSelection();
+         cm.scrollTo(originalScrollPos.left, originalScrollPos.top);
+         handleQuery(query, true /** ignoreCase */, true /** smartCase */);
+         var macroModeState = vimGlobalState.macroModeState;
+@@ -1807,6 +1830,9 @@ export function initVim(CM) {
+         onChange();
+       }
+       function onChange() {
++        restoreQuery();
++        restoreSelection();
++        if (!searchOption(cm, 'incsearch')) return;
+         var parsedQuery;
+         try {
+           parsedQuery = updateSearchQuery(cm, lastQuery,
+@@ -1815,7 +1841,11 @@ export function initVim(CM) {
+           // Swallow bad regexes for incremental search.
+         }
+         if (parsedQuery) {
+-          cm.scrollIntoView(findNext(cm, !forward, parsedQuery), 30);
++          var match = findNext(cm, !forward, parsedQuery);
++          if (match) {
++            if (!vim.visualMode) cm.setCursor(match);
++            cm.scrollIntoView(match, 30);
++          }
+         } else {
+           clearSearchHighlight(cm);
+           cm.scrollTo(originalScrollPos.left, originalScrollPos.top);
+@@ -1828,8 +1858,11 @@ export function initVim(CM) {
+             (keyName == '<BS>' && query == '')) {
+           vimGlobalState.searchHistoryController.pushInput(query);
+           vimGlobalState.searchHistoryController.reset();
+-          updateSearchQuery(cm, originalQuery?.source || "");
++          restoreQuery();
++          restoreSelection();
++          searchState.setReversed(originalReversed);
+           clearSearchHighlight(cm);
++          if (originalHighlight && originalQuery) highlightSearchMatches(cm, originalQuery);
+           cm.scrollTo(originalScrollPos.left, originalScrollPos.top);
+           CM.e_stop(e);
+           clearInputState(cm);
+@@ -1848,7 +1881,7 @@ export function initVim(CM) {
+           var macroModeState = vimGlobalState.macroModeState;
+           if (macroModeState.isPlaying) {
+             let query = macroModeState.replaySearchQueries.shift();
+-            handleQuery(query || '', true /** ignoreCase */, false /** smartCase */);
++            handleQuery(query || '', true /** ignoreCase */, true /** smartCase */);
+           } else {
+             showPrompt(cm, {
+                 onClose: onPromptClose,
+@@ -1913,9 +1946,9 @@ export function initVim(CM) {
+         // an error, the elements don't overlap.
+         vimGlobalState.exCommandHistoryController.pushInput(input);
+         vimGlobalState.exCommandHistoryController.reset();
++        clearSearchHighlight(cm);
+         exCommandDispatcher.processCommand(cm, input);
+         if (cm.state.vim) clearInputState(cm);
+-        clearSearchHighlight(cm);
+       }
+       /**
+        * @arg {KeyboardEvent&{target:HTMLInputElement}} e
+@@ -1954,6 +1987,7 @@ export function initVim(CM) {
+        * @arg {any} query
+        */
+       function onPromptKeyUp(e, query) {
++        if (!searchOption(cm, 'incsearch')) return;
+         var inputStream = new CM.StringStream(query);
+         var params = /**@type{import("./types").exCommandArgs}*/({});
+         try {
+@@ -1966,7 +2000,10 @@ export function initVim(CM) {
+           if (!command) return;
+           exCommandDispatcher.parseCommandArgs_(inputStream, params, command);
+           if (!params.argString) return;
+-          var regex = parseQuery(params.argString.slice(1), true, true);
++          var parts = splitBySeparator(params.argString, params.argString[0]);
++          if (!parts || !parts[0]) return;
++          var regex = parseQuery(parts[0] + '/' + (parts[2] || ''),
++            searchOption(cm, 'ignorecase'), searchOption(cm, 'smartcase'));
+           if (regex) highlightSearchMatches(cm, regex);
+         } catch(e) {
+         }
+@@ -3621,10 +3658,13 @@ export function initVim(CM) {
      // sequence, so that the key buffer is not cleared.
      if (inputState.operator) context = "operatorPending";
      var match, partial = [], full = [];
@@ -19,3 +153,176 @@ index 3cafa6bcf0c99f2ae25a5da8936d3f29445f2d6d..e1f14851f4f63033dc0f00691bd5fe4f
        if (context == 'insert' && command.context != 'insert' ||
            (command.context && command.context != context) ||
            inputState.operator && command.type == 'action' ||
+@@ -5032,10 +5072,10 @@ export function initVim(CM) {
+       this.highlightTimeout;
+     }
+     getQuery() {
+-      return vimGlobalState.query;
++      return this.query;
+     };
+     setQuery(query) {
+-      vimGlobalState.query = query;
++      this.query = query;
+     };
+     getOverlay() {
+       return this.searchOverlay;
+@@ -5044,10 +5084,10 @@ export function initVim(CM) {
+       this.searchOverlay = overlay;
+     };
+     isReversed() {
+-      return vimGlobalState.isReversed;
++      return this.reversed;
+     };
+     setReversed(reversed) {
+-      vimGlobalState.isReversed = reversed;
++      this.reversed = reversed;
+     };
+     getScrollbarAnnotate() {
+       return this.annotate;
+@@ -5235,15 +5275,13 @@ export function initVim(CM) {
+    * @arg {boolean} smartCase
+    */
+   function parseQuery(query, ignoreCase, smartCase) {
+-    // First update the last search register
+-    var lastSearchRegister = vimGlobalState.registerController.getRegister('/');
+-    lastSearchRegister.setText(query);
+     // First try to extract regex + flags from the input. If no flags found,
+     // extract just the regex. IE does not accept flags directly defined in
+     // the regex string in the form /regex/flags
+     var slashes = findUnescapedSlashes(query);
+     var regexPart;
+     var forceIgnoreCase;
++    var patternCase;
+     if (!slashes.length) {
+       // Query looks like 'regexp'
+       regexPart = query;
+@@ -5251,19 +5289,28 @@ export function initVim(CM) {
+       // Query looks like 'regexp/...'
+       regexPart = query.substring(0, slashes[0]);
+       var flagsPart = query.substring(slashes[0]);
+-      forceIgnoreCase = (flagsPart.indexOf('i') != -1);
++      if (/[iI]/.test(flagsPart)) forceIgnoreCase = flagsPart.lastIndexOf('i') > flagsPart.lastIndexOf('I');
+     }
+     if (!regexPart) {
+       return null;
+     }
++    var cleaned = '';
++    for (var i = 0; i < regexPart.length; i++) {
++      var ch = regexPart[i];
++      if (ch.charCodeAt(0) == 92 && i + 1 < regexPart.length) {
++        var next = regexPart[++i];
++        if (next == 'c' || next == 'C') patternCase = next == 'c';
++        else cleaned += ch + next;
++      } else cleaned += ch;
++    }
++    regexPart = cleaned;
+     if (!getOption('pcre')) {
+       regexPart = translateRegex(regexPart);
+     }
+-    if (smartCase) {
+-      ignoreCase = (/^[^A-Z]*$/).test(regexPart);
+-    }
+-    var regexp = new RegExp(regexPart,
+-        (ignoreCase || forceIgnoreCase) ? 'im' : 'm');
++    if (ignoreCase && smartCase && /[A-Z]/.test(regexPart)) ignoreCase = false;
++    if (forceIgnoreCase !== undefined) ignoreCase = forceIgnoreCase;
++    if (patternCase !== undefined) ignoreCase = patternCase;
++    var regexp = new RegExp(regexPart, ignoreCase ? 'im' : 'm');
+     return regexp;
+   }
+ 
+@@ -5360,15 +5407,33 @@ export function initVim(CM) {
+    * @arg {boolean | undefined} [ignoreCase] 
+    * @arg {boolean | undefined} [smartCase]
+   */
++  function searchOption(cm, name) {
++    var value = getOption(name, cm);
++    return value instanceof Error || value === undefined ? true : value;
++  }
++  function refreshSearchOptions(cm) {
++    var state = cm.state.vim && cm.state.vim.searchState_;
++    if (!state) return;
++    if (state.rawQuery) {
++      state.setQuery(parseQuery(state.rawQuery, searchOption(cm, 'ignorecase'),
++        state.smartCaseAllowed && searchOption(cm, 'smartcase')));
++    }
++    if (!searchOption(cm, 'hlsearch')) clearSearchHighlight(cm);
++    else if (state.getQuery()) highlightSearchMatches(cm, state.getQuery());
++  }
+   function updateSearchQuery(cm, rawQuery, ignoreCase, smartCase) {
+     if (!rawQuery) {
+       return;
+     }
+     var state = getSearchState(cm);
+-    var query = parseQuery(rawQuery, !!ignoreCase, !!smartCase);
++    var query = parseQuery(rawQuery, searchOption(cm, 'ignorecase'),
++      smartCase !== false && searchOption(cm, 'smartcase'));
+     if (!query) {
+       return;
+     }
++    state.rawQuery = rawQuery;
++    state.smartCaseAllowed = smartCase !== false;
++    vimGlobalState.registerController.getRegister('/').setText(rawQuery);
+     highlightSearchMatches(cm, query);
+     if (regexEqual(query, state.getQuery())) {
+       return query;
+@@ -5413,13 +5478,15 @@ export function initVim(CM) {
+       query: query
+     };
+   }
+-  var highlightTimeout = 0;
+   /** @arg {CodeMirrorV} cm  @arg {RegExp} query */
+   function highlightSearchMatches(cm, query) {
+-    clearTimeout(highlightTimeout);
+     var searchState = getSearchState(cm);
+-    searchState.highlightTimeout = highlightTimeout;
+-    highlightTimeout = setTimeout(function() {
++    clearTimeout(searchState.highlightTimeout);
++    if (!searchOption(cm, 'hlsearch')) {
++      clearSearchHighlight(cm);
++      return;
++    }
++    searchState.highlightTimeout = setTimeout(function() {
+       if (!cm.state.vim) return;
+       var searchState = getSearchState(cm);
+       searchState.highlightTimeout = undefined;
+@@ -5460,6 +5527,7 @@ export function initVim(CM) {
+           }
+         }
+         if (!found) {
++          if (!searchOption(cm, 'wrapscan')) return;
+           // SearchCursor may have returned null because it hit EOF, wrap
+           // around and try again.
+           cursor = cm.getSearchCursor(query,
+@@ -5504,6 +5572,7 @@ export function initVim(CM) {
+       for (var i = 0; i < repeat; i++) {
+         found = cursor.find(prev);
+         if (!found) {
++          if (!searchOption(cm, 'wrapscan')) return;
+           // SearchCursor may have returned null because it hit EOF, wrap
+           // around and try again.
+           cursor = cm.getSearchCursor(query,
+@@ -6270,6 +6339,7 @@ export function initVim(CM) {
+       // now that we have the regexPart, search for regex matches in the
+       // specified range of lines
+       var query = getSearchState(cm).getQuery();
++      if (!query) { showConfirm(cm, 'No previous search pattern'); return; }
+       /**@type {(string|import("./types").LineHandle)[]}*/
+       var matchedLines = [];
+       for (var i = lineStart; i <= lineEnd; i++) {
+@@ -6345,6 +6415,7 @@ export function initVim(CM) {
+         flagsPart = trailing[0];
+         count = parseInt(trailing[1]);
+         if (flagsPart) {
++          if (!regexPart) regexPart = getSearchState(cm).getQuery()?.source || '';
+           if (flagsPart.indexOf('c') != -1) {
+             confirm = true;
+           }
+@@ -6376,6 +6447,7 @@ export function initVim(CM) {
+       }
+       var state = getSearchState(cm);
+       var query = state.getQuery();
++      if (!query) { showConfirm(cm, 'No previous search pattern'); return; }
+       var lineStart = (params.line !== undefined) ? params.line : cm.getCursor().line;
+       var lineEnd = params.lineEnd || lineStart;
+       if (lineStart == cm.firstLine() && lineEnd == cm.lastLine()) {

@@ -3610,8 +3610,8 @@ __metadata:
 
 "@replit/codemirror-vim-core@patch:@replit/codemirror-vim-core@npm%3A0.1.0#~/.yarn/patches/@replit-codemirror-vim-core-npm-0.1.0-7657ec0c80.patch":
   version: 0.1.0
-  resolution: "@replit/codemirror-vim-core@patch:@replit/codemirror-vim-core@npm%3A0.1.0#~/.yarn/patches/@replit-codemirror-vim-core-npm-0.1.0-7657ec0c80.patch::version=0.1.0&hash=6bc162"
-  checksum: 10c0/ca5245479000a9615e307d9ca570e3dcccac53431c2e0135f734df935ae3d94e08fedb4d23bd20648b2892aba9571ab614694783d175e5d78a8397d09ab69496
+  resolution: "@replit/codemirror-vim-core@patch:@replit/codemirror-vim-core@npm%3A0.1.0#~/.yarn/patches/@replit-codemirror-vim-core-npm-0.1.0-7657ec0c80.patch::version=0.1.0&hash=986059"
+  checksum: 10c0/15e58a0dec23c025704695a6829a549c21b373118a36e9f050fe11d434f677cf9677d7ea51c95db3a9d9b7dff1767911ccd5d09ccbebff8c637cfb20e63cd360
   languageName: node
   linkType: hard
 

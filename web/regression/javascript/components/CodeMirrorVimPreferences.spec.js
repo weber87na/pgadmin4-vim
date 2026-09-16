@@ -11,6 +11,7 @@ import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { history } from '@codemirror/commands';
 import { getCM, vim, Vim } from '@replit/codemirror-vim';
+import vimSearch from 'sources/components/ReactCodeMirror/extensions/vimSearch';
 import vimSave from 'sources/components/ReactCodeMirror/extensions/vimSave';
 import vimNumbers from 'sources/components/ReactCodeMirror/extensions/vimNumbers';
 import vimFolding from 'sources/components/ReactCodeMirror/extensions/vimFolding';
@@ -28,7 +29,7 @@ describe('CodeMirror persistent Vim preferences', () => {
     document.body.appendChild(parent);
     const view = new EditorView({
       parent,
-      state: EditorState.create({ doc, extensions: [vim(), history(), vimNumbers(), vimFolding(), extra, compartment.of(vimPreferences(config, leader))] }),
+      state: EditorState.create({ doc, extensions: [vim(), vimSearch(), history(), vimNumbers(), vimFolding(), extra, compartment.of(vimPreferences(config, leader))] }),
     });
     views.push({view, parent});
     return { view, cm: getCM(view), compartment };
@@ -75,11 +76,18 @@ describe('CodeMirror persistent Vim preferences', () => {
     expect(parsed.mappings.map(map => map.context)).toEqual(['visual', 'insert']);
   });
 
-  it.each(['source ~/.vimrc', 'javascript alert(1)', 'set nf=hex,nope', 'set nf=hex,hex', 'set fdm=expr', 'set fdl=-1', 'set tw=1', 'set ignorecase', 'nnoremap <expr> x', 'nnoremap 2 x', 'nnoremap :unsafe x'])('rejects unsupported configuration atomically: %s', command => {
+  it.each(['source ~/.vimrc', 'javascript alert(1)', 'set nf=hex,nope', 'set nf=hex,hex', 'set fdm=expr', 'set fdl=-1', 'set tw=1', 'set nonexisting', 'nnoremap <expr> x', 'nnoremap 2 x', 'nnoremap :unsafe x'])('rejects unsupported configuration atomically: %s', command => {
     const parsed = parseVimConfig('set tw=100\nnnoremap Q x\n' + command);
     expect(parsed.errors.length).toBeGreaterThan(0);
     expect(parsed.options).toEqual({});
     expect(parsed.mappings).toEqual([]);
+  });
+
+  it('validates persistent local search options and their aliases', () => {
+    expect(parseVimConfig('set noic scs nohls is nows').options).toEqual({
+      ignorecase: false, smartcase: true, hlsearch: false, incsearch: true, wrapscan: false,
+    });
+    expect(parseVimConfig('set ignorecase=yes').errors.length).toBeGreaterThan(0);
   });
 
   it('validates the leader as one key and supports Space', () => {

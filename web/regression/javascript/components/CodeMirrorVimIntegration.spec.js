@@ -254,6 +254,75 @@ describe('Query editor Vim integration', () => {
     expect(first.view.getValue()).toBe('lpha');
   });
 
+  it('keeps persistent search options and patterns local across status rerenders', async () => {
+    const first = mountEditor({value: 'foo FOO foo', vimConfig: 'set noic nohls'});
+    const second = mountEditor({value: 'bar BAR bar'});
+    await act(async () => {});
+    const firstCM = getCM(first.view);
+    keys(first.view, ['/']);
+    let input = first.view.dom.querySelector('.cm-vim-panel input');
+    fireEvent.input(input, {target: {value: 'foo'}});
+    fireEvent.keyUp(input, {key: 'o', keyCode: 79});
+    expect(first.view.state.selection.main.head).toBe(8);
+    first.rerender({vimShowStatus: false});
+    expect(getCM(first.view)).toBe(firstCM);
+    expect(first.view.dom.querySelector('.cm-vim-panel input')).toBe(input);
+    fireEvent.keyDown(input, {key: 'Enter', keyCode: 13});
+    expect(first.view.state.selection.main.head).toBe(8);
+    expect(Vim.getOption('ic', firstCM)).toBe(false);
+    expect(Vim.getOption('hls', firstCM)).toBe(false);
+
+    keys(second.view, ['/']);
+    input = second.view.dom.querySelector('.cm-vim-panel input');
+    fireEvent.input(input, {target: {value: 'bar'}});
+    fireEvent.keyDown(input, {key: 'Enter', keyCode: 13});
+    expect(second.view.state.selection.main.head).toBe(4);
+    expect(Vim.getOption('ic', getCM(second.view))).toBe(true);
+    keys(first.view, ['n']);
+    expect(first.view.state.selection.main.head).toBe(0);
+    first.rerender({vimConfig: 'set ic noscs'});
+    await act(async () => {});
+    keys(first.view, ['n']);
+    expect(first.view.state.selection.main.head).toBe(4);
+    keys(second.view, ['n']);
+    expect(second.view.state.selection.main.head).toBe(8);
+  });
+
+  it('integrates SQL argument text objects with the Query Tool SQL language', () => {
+    const original = 'SELECT fn(first, second, third);';
+    const editor = mountEditor({value: original});
+    act(() => editor.view.dispatch({selection: {anchor: original.indexOf('second')}}));
+    keys(editor.view, ['d', 'a', 'a']);
+    expect(editor.view.getValue()).toBe('SELECT fn(first, third);');
+    keys(editor.view, ['u']);
+    expect(editor.view.getValue()).toBe(original);
+  });
+
+  it('routes physical Insert Control-y through the new shortcut after reconfiguration', () => {
+    const editor = mountEditor({value: 'abc\n'});
+    keys(editor.view, ['G', 'i']);
+    fireEvent.keyDown(editor.view.contentDOM, {key: 'y', code: 'KeyY', keyCode: 89, ctrlKey: true});
+    expect(editor.view.getValue()).toBe('abc\na');
+    editor.rerender({vimShowStatus: false});
+    fireEvent.keyDown(editor.view.contentDOM, {key: 'y', code: 'KeyY', keyCode: 89, ctrlKey: true});
+    expect(editor.view.getValue()).toBe('abc\nab');
+    expect(getCM(editor.view).state.vim.insertMode).toBe(true);
+    fireEvent.keyDown(editor.view.contentDOM, {key: 'Escape', code: 'Escape', keyCode: 27});
+    expect(getCM(editor.view).state.vim.insertMode).toBe(false);
+  });
+
+  it('uses Query Tool indentation preferences for retab and keeps it one undoable edit', () => {
+    const original = '\tSELECT 1;\nSELECT\t2;';
+    const editor = mountEditor({value: original});
+    ex(editor.view, 'retab');
+    expect(editor.view.getValue()).toBe('    SELECT 1;\nSELECT  2;');
+    keys(editor.view, ['u']);
+    expect(editor.view.getValue()).toBe(original);
+    editor.rerender({disabled: true});
+    ex(editor.view, 'retab');
+    expect(editor.view.getValue()).toBe(original);
+  });
+
   it('creates manual folds in a read-only Query Tool and clears them on document replacement', () => {
     const editor = mountEditor({value: 'one\ntwo\nthree\nfour', readonly: true});
     ex(editor.view, 'set fdm=manual');

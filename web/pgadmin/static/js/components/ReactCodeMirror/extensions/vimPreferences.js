@@ -14,6 +14,8 @@ import { getCM, Vim } from '@replit/codemirror-vim';
 const aliases = {
   tw: 'textwidth', nf: 'nrformats', fdm: 'foldmethod',
   fdl: 'foldlevel', fen: 'foldenable',
+  ic: 'ignorecase', scs: 'smartcase', hls: 'hlsearch',
+  is: 'incsearch', ws: 'wrapscan',
 };
 const modes = { nnoremap: 'normal', vnoremap: 'visual', inoremap: 'insert' };
 const unmaps = { nunmap: ['normal'], vunmap: ['visual'], iunmap: ['insert'], unmap: ['normal', 'visual', 'insert'] };
@@ -57,7 +59,7 @@ function option(token) {
   if (!match) throw Error('Invalid setting: ' + token);
   const name = aliases[match[2]] || match[2];
   const value = match[3];
-  if (name === 'foldenable' && value === undefined) return [name, !match[1]];
+  if (['foldenable', 'ignorecase', 'smartcase', 'hlsearch', 'incsearch', 'wrapscan'].includes(name) && value === undefined) return [name, !match[1]];
   if (match[1] || value === undefined) throw Error('Setting requires a value: ' + token);
   if (name === 'textwidth' && /^\d+$/.test(value) && +value >= 2 && +value <= 10000) return [name, +value];
   if (name === 'foldlevel' && /^\d+$/.test(value) && +value <= 999) return [name, +value];

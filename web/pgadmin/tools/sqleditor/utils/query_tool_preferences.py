@@ -250,8 +250,11 @@ def register_query_tool_preferences(self):
             'Persistent Vim settings, one command per line: set, nnoremap, '
             'vnoremap, inoremap, nunmap, vunmap, iunmap, or unmap. Lines '
             'starting with a double quote are comments. Supported options: '
-            'textwidth, nrformats, foldmethod, foldlevel, and '
-            'foldenable. Example: nnoremap <Leader>w :w<CR>. Invalid '
+            'textwidth, nrformats, foldmethod, foldlevel, foldenable, '
+            'ignorecase, smartcase, hlsearch, incsearch, and wrapscan. '
+            'Search options are local to each editor and default to on. '
+            'Example setting: set noignorecase. Example mapping: '
+            'nnoremap <Leader>w :w<CR>. Invalid '
             'configuration is reported below the SQL editor. Arbitrary '
             'Vimscript is not supported.'
         )
