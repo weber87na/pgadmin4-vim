@@ -60,7 +60,15 @@ import vimFolding from '../extensions/vimFolding';
 import vimSurround from '../extensions/vimSurround';
 import vimSave from '../extensions/vimSave';
 import vimExLines from '../extensions/vimExLines';
+import vimChanges from '../extensions/vimChanges';
 import vimKeys from '../extensions/vimKeys';
+import vimNumbers from '../extensions/vimNumbers';
+import vimSearch from '../extensions/vimSearch';
+import vimPaste from '../extensions/vimPaste';
+import vimTextObjects from '../extensions/vimTextObjects';
+import vimExEditing from '../extensions/vimExEditing';
+import vimInsert from '../extensions/vimInsert';
+import vimPreferences from '../extensions/vimPreferences';
 
 const arrowRightHtml = ReactDOMServer.renderToString(<KeyboardArrowRightRoundedIcon style={{width: '16px', fill: 'currentcolor'}} />);
 const arrowDownHtml = ReactDOMServer.renderToString(<ExpandMoreRoundedIcon style={{width: '16px', fill: 'currentcolor'}} />);
@@ -176,7 +184,8 @@ export default function Editor({
   currEditor, name, value, options, onCursorActivity, onChange, readonly,
   disabled, autocomplete = false, autocompleteOnKeyPress, breakpoint = false, onBreakPointChange,
   showActiveLine=false, keepHistory = true, cid, helpid, labelledBy,
-  customKeyMap, language='pgsql', vimMode=false, vimShowStatus=true, onVimSave
+  customKeyMap, language='pgsql', vimMode=false, vimShowStatus=true, onVimSave,
+  onVimClose, onVimNavigate, vimConfig='', vimLeader=','
 }) {
   const checkIsMounted = useIsMounted();
 
@@ -443,18 +452,27 @@ export default function Editor({
         vimStatus(vimShowStatus),
         vimFolding(vimFoldEnabled),
         vimSurround(),
-        vimSave(onVimSave),
+        vimSave(onVimSave, onVimClose, onVimNavigate),
         vimExLines(),
+        vimChanges(),
+        vimNumbers(),
+        vimSearch(),
+        vimPaste(),
+        vimTextObjects(),
+        vimExEditing(),
+        vimInsert(),
+        vimPreferences(vimConfig, vimLeader),
       ] : []),
     });
-  }, [vimMode, vimShowStatus, vimFoldEnabled, onVimSave]);
+  }, [vimMode, vimShowStatus, vimFoldEnabled, onVimSave, onVimClose, onVimNavigate, vimConfig, vimLeader]);
 
   useMemo(() => {
     if (!checkIsMounted()) return;
     if (editor.current) {
       if (value != editor.current.getValue()) {
         editor.current.dispatch({
-          changes: { from: 0, to: editor.current.state.doc.length, insert: value || '' }
+          changes: { from: 0, to: editor.current.state.doc.length, insert: value || '' },
+          userEvent: 'document.replace'
         });
       }
     }
@@ -498,4 +516,8 @@ Editor.propTypes = {
   vimMode: PropTypes.bool,
   vimShowStatus: PropTypes.bool,
   onVimSave: PropTypes.func,
+  onVimClose: PropTypes.func,
+  onVimNavigate: PropTypes.func,
+  vimConfig: PropTypes.string,
+  vimLeader: PropTypes.string,
 };

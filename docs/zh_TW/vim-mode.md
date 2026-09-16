@@ -3,6 +3,8 @@
 適用於本分支的 Query Tool SQL 編輯器。Vim 由內建前端套件
 `@replit/codemirror-vim 6.4.0` / `codemirror-vim-core 0.1.0` 提供，
 不需要安裝 Vim、Neovim，也不需要 `init.lua`。
+以 Yarn patch 修正核心非遞迴映射與搜尋選項：RHS 保留 pgAdmin 新增指令，
+同時略過使用者映射；搜尋狀態依編輯器隔離，套件版本維持不變。
 
 ## 開啟方式
 
@@ -20,7 +22,9 @@
 ## 功能盤點
 
 「既有」表示由鎖定版本的 Vim 引擎提供；「第一批」已在 PR #21 合併；
-「第二批」與「第三批」接續在 PR #22 補上原生指令。
+「第二批」與「第三批」已在 PR #22 合併；「第四批」加入摺疊跳轉，「第五批」加入變更清單，「第六批」補上摺疊開關與 Visual 切換。
+前次接續新增數字編輯、手動摺疊、分頁生命週期與持久設定；
+這一批補上搜尋選項、貼上及 Insert 快捷鍵、Ex 空白整理與 SQL 文字物件。
 Surround 是外掛式擴充，不列為原生 Vim 功能。
 
 | 類別 | 主要指令 | 狀態 |
@@ -30,27 +34,40 @@ Surround 是外掛式擴充，不列為原生 Vim 功能。
 | 字元／段落跳轉 | `f F t T`、`; ,`、`%`、`{ }` | 既有 |
 | 編輯與縮排 | `d c y p P x r`、`dd cc yy`、`>> << =` | 既有 |
 | 合併行 | `J`、`gJ` | 既有，新增回歸覆蓋 |
-| 文字物件 | `iw aw iW aW`、括號、引號文字物件，例如 `di(`、`ci"` | 既有 |
+| 文字物件 | `iw aw iW aW`、`ip ap`、`is as`、`it at`、括號與引號 | 既有；段落、句子與標籤並非本次新增 |
+| SQL 文字物件（擴充） | `if af`、`ia aa`，例如 `dif`、`yaf`、`2daa` | 本次新增，依 PostgreSQL 語法辨識支援範圍 |
 | 選取 | `v V`、`Ctrl+v`／`Ctrl+q`、`o`、`gv` | 既有 |
 | 搜尋 | `/ ? n N * # g* g# gn gN`、`:noh` | 既有；修復指示列切換後命令列消失 |
+| 搜尋選項 | `ignorecase smartcase hlsearch incsearch wrapscan` 及縮寫 | 本次新增本地與持久設定，修正分頁隔離 |
 | 取代 | `:s/a/b/`、`:%s/a/b/g`、確認旗標 `c` | 既有；使用引擎支援的正規表示式語法 |
 | 復原與重做 | `u`、`Ctrl+r`、`.` | 既有 |
 | 暫存器與巨集 | `"ayy`、`"ap`、`qa … q`、`@a`、`@@` | 既有 |
+| 貼上與選取取代 | `gp gP`、`[P ]P`、Visual `p P gp gP` | 本次補齊貼上位置、縮排及暫存器保留 |
+| Insert 快捷鍵 | `Ctrl+y/e`、`Ctrl+a/@`、`Ctrl+g u` | 本次新增相鄰字元複製、前次輸入與復原分段 |
 | 標記與跳躍 | `ma`、`'a`、`` `a ``、`Ctrl+o`／`Ctrl+i` | 既有 |
 | 大小寫、數字、註解 | `~ gu gU`、`Ctrl+a`／`Ctrl+x`、`gcc`／`gc{motion}` | 既有 |
 | Surround（非原生） | `ys{motion}{符號}`、`yss{符號}`、`ds{符號}`、`cs{舊}{新}`、Visual `S{符號}` | 第一批新增 |
 | 基本摺疊 | `zc zo za zM zR` | 第一批新增；第二批串接層級狀態 |
 | 遞迴摺疊 | `zC zO zA` | 第二批新增 |
 | 摺疊層級 | `zm zr`、`2zm 2zr` | 第二批新增 |
-| 選取範圍摺疊 | Visual `zc zo zC zO` | 第三批新增 |
+| 選取範圍摺疊 | Visual `zc zo zC zO za zA` | 第三批新增；第六批補齊切換 |
+| 暫時展開／恢復 | `zn zN zi` | 第六批新增，採快照恢復 |
 | Ex 範圍摺疊 | `:foldopen[!]`、`:foldclose[!]` | 第三批新增 |
 | 顯示游標／重算摺疊 | `zv zx zX` | 第三批新增 |
+| 摺疊跳轉 | `[z ]z zj zk` | 第四批新增 |
+| 變更清單 | `g;`、`g,`、`:changes` | 第五批新增 |
 | 整行複製／搬移 | `:copy`／`:co`／`:t`、`:move`／`:m` | 第二批新增 |
 | 排序 | `:sort u`、`:sort n` | 既有；第二批新增回歸覆蓋 |
 | 條件批次編輯 | `:g/pattern/d`、`:v/pattern/d` | 既有；第二批新增回歸覆蓋 |
 | 範圍普通模式操作 | `:%normal x` | 既有；第二批新增回歸覆蓋 |
 | Ex 行操作 | `:1,2join`、`:2delete` | 既有；第二批新增回歸覆蓋 |
+| Ex 空白與對齊 | `:retab[!]`、`:left`、`:center`、`:right` | 本次新增，支援範圍及顯示欄寬 |
 | 儲存 SQL | `:w`、`:write` | 第一批接到 pgAdmin 儲存流程 |
+| Visual 數字與序列 | `Ctrl+a/x`、`g Ctrl+a/x` | 前次新增，含精確整數 |
+| 手動摺疊 | `zf zF zd zD zE`、`:fold` | 前次新增 |
+| 編輯器摺疊選項 | `foldmethod`、`foldlevel`、`foldenable` | 前次新增支援子集 |
+| 關閉與儲存後關閉 | `:q :wq :x`、`ZZ ZQ` | 前次接入 pgAdmin 分頁流程 |
+| 持久 Vim 設定 | Preferences 內的設定與 Leader | 前次新增；本次擴充搜尋選項 |
 | 唯讀／停用保護 | 刪除、縮排、貼上、Tab、拖放等操作 | 第一批補強 |
 
 ## 常用操作
@@ -64,6 +81,9 @@ ciw    修改游標所在單字
 di(    刪除括號裡的內容，保留括號
 da(    刪除內容及括號
 ci"    修改雙引號中的內容
+yip    複製目前段落；yap 也包含相鄰空白行
+yis    複製目前句子；yas 也包含引擎判定的相鄰空白
+vit    選取配對標籤之間的內容；vat 包含標籤
 gcc    切換目前 SQL 行的 -- 註解
 gcj    切換目前行與下一行的註解
 ```
@@ -121,7 +141,7 @@ zr     提高一層展開層級，顯示更多內容
 `zR` 設為目前最大深度；`zm/zr` 依次數調整並重新套用，會重設個別區塊的手動開關。
 `zC` 不主動關閉未包含游標行的兄弟區塊；`zA` 關閉目前區塊及其子區塊。
 初次使用層級命令時，以全部展開為起點。這是 CodeMirror 語法摺疊整合，
-尚未提供 Vim 的 `foldmethod`／`:set foldlevel` 選項。
+本次另加入 `foldmethod=syntax|manual` 與 `:set foldlevel` 子集，見後文。
 
 ### 選取範圍摺疊與重新計算（第三批）
 
@@ -165,6 +185,98 @@ zx                  同 zX，並展開游標所在行需要的區塊
 
 實作與測試沿用 `vimFolding.js`、`CodeMirrorVimFolding.spec.js`，
 並在 `CodeMirrorVimIntegration.spec.js` 驗證實際 Query Tool 的語法摺疊服務。
+
+### 摺疊跳轉（第四批）
+
+| 指令 | 操作 | 已驗證 |
+| --- | --- | --- |
+| `[z` | 移到目前開啟區塊的起始行；已在起始行時往外一層 | 巢狀區塊、邊界、次數 |
+| `]z` | 移到目前開啟區塊的結束行；已在結束行時往外一層 | 巢狀區塊、邊界、次數 |
+| `zj` | 往下移到下一個可見區塊的起始行 | 關閉子區塊、次數、巨集 |
+| `zk` | 往上移到上一個可見區塊的結束行 | 關閉區塊視為一行、次數 |
+
+```text
+2[z     往外跳兩次區塊起點
+2]z     往外跳兩次區塊終點
+3zj     往下跳三個可見區塊起點
+2zk     往上跳兩個可見區塊終點
+v]z     選取至目前開啟區塊的結束行
+yzj     複製至下一個區塊起點之前
+dzj     刪除至下一個區塊起點之前
+```
+
+四個指令走 Vim 引擎的 motion 路徑，可配合字元／整行／區塊 Visual 選取、
+操作符及次數。`dzj` 可單步復原並用 `.` 重複，跳轉也能錄入巨集。
+跳轉目標是該行第 1 欄；操作符的範圍沿用引擎的 exclusive motion 規則。
+沒有目標時不移動，待執行的操作符會取消。
+
+關閉的區塊只算一次，隱藏子區塊不列入跳轉；`zk` 到關閉區塊時停在其顯示標頭。
+唯讀文件仍能跳轉，但無法藉操作符修改內容。關閉 code folding 偏好時，這組指令停用。
+
+區塊邊界採用編輯器的語法摺疊服務；例如 PL/pgSQL 的 `END` 若被服務保留在
+摺疊範圍外，`]z` 會停在隱藏範圍的最後一行，而非 `END` 行。
+這些指令不等同獨立的 SQL 函式／語句文字物件。
+
+### 變更位置清單（第五批）
+
+| 指令 | 功能 | 已驗證 |
+| --- | --- | --- |
+| `g;` | 跳到較舊的變更位置，首次跳至最新變更 | 次數、最舊邊界、復原後位置 |
+| `g,` | 跳到較新的變更位置 | 次數、最新邊界、瀏覽途中再次編輯 |
+| `:changes` | 顯示目前編輯器的變更清單 | 行號、欄位、文字預覽、目前位置 `>` |
+
+```text
+3g;       往回走訪三個變更位置
+2g,       往前走訪兩個變更位置
+:changes  查看清單；第一欄是與目前索引的距離
+```
+
+每個編輯器最多保留 100 個位置；同一行、相距小於 79 個 UTF-16 單位的相鄰
+變更會合併，避免每輸入一個字元就增加一筆。這是目前固定的合併規則，尚未連動
+Vim 的 `textwidth`／`wrapmargin`，也不採用原生 Vim 的位元組欄位計算。
+本次 Preferences 可保存 `textwidth` 供原有文字重排使用，但不會改變此清單的合併門檻。
+
+- 記錄帶有編輯事件的輸入、刪除、貼上與 Ex 行操作；純游標移動不新增紀錄。
+- 插入／刪除會映射既有位置；復原／重做不新增紀錄，但保留並更新清單。
+  原位置被刪除時可能落到刪除範圍邊界，沒有獨立還原位置的歷史。
+- 超出次數時停在最舊／最新的有效位置；空清單或無法繼續時顯示提示。
+- `g;`／`g,` 是 Normal 模式指令，不是可配合 `d/y/c` 的 motion。
+- 切換模式指示列不清空清單；載入另一份 SQL、關閉再開啟 Vim 或銷毀編輯器會清空。
+- `:changes` 的行號從 1 開始、欄位從 0 開始；每行預覽最多 120 個 UTF-16 單位。
+  唯讀模式可瀏覽既有清單，SQL 文字以純文字顯示。
+- 尚未提供 `:keepjumps` 修飾詞、跨分頁共享清單或清單持久化。
+
+### 摺疊開關與 Visual 切換（第六批）
+
+| 指令 | 功能 | 已驗證 |
+| --- | --- | --- |
+| `zn` | 保存已關閉區塊並暫時全部展開 | 重複操作不覆寫快照、層級保留 |
+| `zN` | 恢復先前關閉的有效區塊 | 巢狀區塊、編輯後映射、隱藏游標調整 |
+| `zi` | 切換暫時展開／恢復 | 空快照、每個編輯器獨立狀態 |
+| Visual `za` | 逐區塊切換一層 | 混合開關、正反向及三種選取模式 |
+| Visual `zA` | 逐區塊遞迴切換 | 子區塊一起開關、保留 `gv` |
+
+```text
+zMzn     先關閉所有區塊，再暫時展開查看
+zN       恢復先前的摺疊狀態
+zi       切換暫時展開／恢復
+V … za   切換選取範圍內的區塊一層
+V … zA   遞迴切換選取範圍內的區塊
+```
+
+選取混合狀態時，已關閉的區塊展開，開啟的區塊關閉；處理過的區塊不會因為
+涵蓋多個選取行而被重複切換。操作後回到 Normal 模式，SQL 文字不變。
+
+暫時展開採快照機制；本次 `:set foldenable`／`:set nofoldenable` 也接入此狀態：
+
+- 再執行其他 Vim 摺疊開關／層級／範圍命令時，先恢復快照再執行該命令；
+  摺疊跳轉不會主動恢復。這與原生 Vim 部分命令保留 `nofoldenable` 的行為有差異。
+- `nofoldenable` 期間會抑制滑鼠及其他 CodeMirror 操作新增的關閉範圍；
+  其他 Vim 摺疊命令仍可能重新啟用摺疊，維持既有命令行為。
+- 編輯後只恢復位置映射仍符合語法服務的區塊，已刪除或失效的範圍會捨棄。
+- 切換顯示偏好保留快照；載入另一份 SQL 清除舊範圍，但保留 foldmethod、
+  foldlevel 與 foldenable 選項；關閉 Vim／code folding 或銷毀編輯器時清除狀態。
+- 恢復後若游標落在隱藏區域，會移到可見標頭；`zx` 則保留並顯示原游標行。
 
 ### 整行複製與搬移
 
@@ -219,32 +331,284 @@ Query Tool 的儲存 SQL 檔案流程；尚未命名的分頁會使用原有儲�
 目前僅支援儲存整份查詢；`:w filename`、`:w!`、範圍儲存會提示改用
 `:w`，不會默默忽略參數。`:w` 不會執行 SQL，也不會提交資料庫交易。
 
+## 新增與擴充操作
+
+### 搜尋選項與分頁隔離
+
+五項選項都限於目前編輯器，也可以寫入 Preferences 的 **Vim configuration**。
+為維持本分支原有搜尋行為，預設皆為開啟；這不等同原生 Vim 的預設值。
+
+| 選項／縮寫 | 開啟時的行為 | 關閉範例 |
+| --- | --- | --- |
+| `ignorecase`／`ic` | 搜尋不區分大小寫，也影響 `:s`／`:g` | `:set noic` |
+| `smartcase`／`scs` | `ignorecase` 開啟且輸入的搜尋式含大寫時，改為區分大小寫 | `:set noscs` |
+| `hlsearch`／`hls` | 顯示搜尋結果標示 | `:set nohls` |
+| `incsearch`／`is` | Normal 模式輸入 `/` 或 `?` 時即時預覽位置與標示 | `:set nois` |
+| `wrapscan`／`ws` | 搜尋超過文件邊界時繞回另一端 | `:set nows` |
+
+```vim
+:set ignorecase smartcase
+:set nowrapscan
+/Customer
+/Customer\c
+/customer\C
+:s/customer/Customer/I
+```
+
+搜尋式中的 `\c`／`\C` 可明確指定不區分／區分大小寫；`:s` 的 `i`／`I`
+旗標也能指定大小寫行為。`*`／`#` 依 `ignorecase` 搜尋，不套用 `smartcase`。
+`:set nohls` 立即移除標示；`:noh` 則暫時隱藏，下一次搜尋可再次顯示。
+即時預覽按 `Esc` 會恢復先前的選取、搜尋式及方向。
+`nowrapscan` 也約束 `n`／`N` 的次數，不會為湊足次數而繞回文件另一端。
+不同 Query Tool 的搜尋式、方向、標示及預覽狀態不互相覆寫。
+
+### 貼上、縮排與保留暫存器
+
+| 指令 | 行為 |
+| --- | --- |
+| `gp`／`gP` | 同 `p`／`P` 貼上，但把游標放在貼入內容之後 |
+| `[p`／`[P`／`]P` | 在目前行之前貼上，並比照目前行縮排 |
+| `]p` | 在目前行之後貼上，並比照目前行縮排 |
+| Visual `p`／`gp` | 取代選取範圍，被取代內容進入未命名暫存器 |
+| Visual `P`／`gP` | 取代選取範圍，保留原本的未命名暫存器 |
+
+`[P` 和 `]P` 都是往前貼上；請用 `]p` 往後貼上。
+`gp`／`gP` 貼上整行後停在後一行行首；文件末尾則停在最後貼入行的行首。
+貼上區塊後停在最後一列貼入文字之後。Visual 支援字元、整行、區塊及反向選取。
+
+```text
+3gp       貼上三次，游標移至貼入內容之後
+viwP      用暫存器取代單字，保留暫存器供下一次使用
+"ap       貼上具名暫存器 a
+"0p       貼上最近一次 yank 的內容
+```
+
+支援次數、巨集、`.`、`u`／`Ctrl+r`，並保留 `gv` 及貼上範圍標記 `'[`／`']`。
+Visual 操作的 `.` 依上次選取大小重做，但會讀取當下的暫存器；因此重複用同一份
+內容取代時，優先使用 `P`，或明確指定 `"0p`／`"ap`。具名暫存器不會因選取取代而覆寫。
+
+### Insert 模式快捷鍵與復原分段
+
+以下按鍵在 Insert／Replace 模式使用；Normal 模式的 `Ctrl+a` 仍是數字遞增。
+
+| 按鍵 | 行為 |
+| --- | --- |
+| `Ctrl+y` | 插入上一行相同顯示欄位的字元 |
+| `Ctrl+e` | 插入下一行相同顯示欄位的字元 |
+| `Ctrl+a` | 重播這個編輯器上一次完成的輸入，並留在 Insert／Replace 模式 |
+| `Ctrl+@` | 重播前次輸入後回到 Normal 模式 |
+| `Ctrl+g`，再按 `u` | 在目前位置切開復原紀錄，繼續輸入 |
+
+美式鍵盤可用 `Ctrl+Shift+2` 輸入 `Ctrl+@`。
+相鄰字元以顯示欄位對齊，處理 Tab、中文、emoji 及組合字元；來源行太短或已到
+文件邊界時不插入文字。Replace 模式覆寫完整字元，不會切斷代理字元或組合字元。
+前次輸入包含輸入過程中的刪除等編輯步驟；單純進入再離開 Insert 不會清掉前次紀錄。
+
+例如 `iabc<C-g>udef<Esc>` 輸入 `abcdef` 後，第一次 `u` 移除 `def`，
+第二次再移除 `abc`；`.` 只重播分界之後的輸入，不重做分界之前的 `c`／`o` 等動作。
+上述操作可錄入巨集，唯讀／不可編輯狀態不修改內容。
+
+### Ex 空白整理與對齊
+
+```vim
+:%retab 4
+:10,20retab! 8
+:'<,'>left 2
+:center 80
+:right 100
+```
+
+| 指令／縮寫 | 省略範圍或參數時 |
+| --- | --- |
+| `:retab`／`:ret` | 處理整份文件；保留目前 Tab 寬度 |
+| `:retab!` | 同上，另處理兩個以上連續空格 |
+| `:left`／`:le` | 處理目前行；縮排為 0 |
+| `:center`／`:ce` | 處理目前行；寬度採 `textwidth`，未設定時為 80 |
+| `:right`／`:ri` | 同上 |
+
+範圍可用數字、`%`、Vim 標記或 Visual 範圍。`retab` 依原本 Tab 寬度計算欄位，
+再依 pgAdmin 的 **Use spaces** 設定轉成空格或 Tab／空格組合。
+未加 `!` 時只處理含 Tab 的空白區段；`!` 可整理多個空格，但不單獨轉換一個空格，
+也不在使用 Tab 時改成更長的表示。此操作不限行首，SQL 字串裡的空白也會受到影響。
+正整數參數會更新目前編輯器的 Tab 顯示寬度；省略或 `0` 保留原值。
+
+對齊指令只調整行首空白，保留行內文字、行尾空白與文件最後的換行；空行保持不變。
+`center`／`right` 不處理純空白行，寬度 `0` 等同省略寬度。數值接受 `0`～`10000`，負數、無效參數及過大的
+輸出會提示錯誤；不支援 `-indentonly` 或逗號分隔的 Tab 停駐點。
+一次範圍操作可用一次 `u` 復原，唯讀／停用狀態不修改內容。
+
+欄寬採等寬文字模型：Tab 移至下一停駐點、中文／全形及 emoji 通常為兩格、
+組合附加字元為零格、模糊寬度符號為一格；使用比例字型時可能與實際像素位置不同。
+
+### SQL 函式與引數文字物件
+
+這組是 SQL 擴充文字物件，不是原生 Vim 的通用函式解析器。
+既有 `ip/ap`、`is/as`、`it/at` 仍交給 Vim 引擎處理。
+
+| 文字物件 | 範圍 | 範例 |
+| --- | --- | --- |
+| `if` | 函式／程序的引號主體內容，排除外層引號及主體首尾空白 | `yif` 複製、`cif` 修改 |
+| `af` | 完整 `CREATE FUNCTION`／`CREATE PROCEDURE` 宣告，包含選項及結尾分號 | `daf` 刪除完整宣告 |
+| `ia` | 最近一層圓括號中的目前引數，排除首尾空白 | `dia` 刪除內容，保留逗號 |
+| `aa` | 引數及相鄰逗號；優先含後方分隔，最後一個則含前方分隔 | `daa` 刪除完整引數 |
+
+```text
+yif       複製目前 SQL 函式的主體內容
+vaf       選取目前 SQL 函式的完整宣告
+cia       修改目前引數
+2daa      刪除目前及下一個引數，連同需要移除的逗號
+```
+
+`if/af` 支援 `CREATE [OR REPLACE] FUNCTION/PROCEDURE`，必須有完整參數括號、
+`LANGUAGE`、`AS` 後的單引號或 dollar-quoted 主體，以及結尾分號；游標可位於該宣告
+的簽章、主體或選項中。主體內的假宣告、註解與分號不會截斷範圍。
+保留引號內 SQL 的原始文字，例如重複單引號不會被解碼成另一份內容。
+
+`ia/aa` 依巢狀括號辨識同層逗號，略過字串、quoted identifier、註解及陣列內的逗號。
+也能在已辨識的 SQL／PL/pgSQL dollar-quoted 函式主體內操作引數。
+次數由目前引數往後擴展，超出時停在最後一個；不跨到其他括號層級。
+支援操作符、Visual 選取、巨集、`.` 及復原；唯讀狀態可選取／複製，不能修改。
+
+`if/af` 不處理 `DO`、C／internal 外部函式、未加引號的 `BEGIN ATOMIC` 主體、
+不完整或有歧義的宣告，也不接受大於 1 的次數以跨越多個函式。
+空引數、不完整括號或找不到可靠範圍時，待執行的操作會取消，文字保持不變。
+
+### Visual 數字與遞增序列
+
+```text
+Ctrl+a          增加目前行游標處或之後的數字
+Ctrl+x          減少目前行游標處或之後的數字
+V … Ctrl+a      每個選取行的第一個數字增加 1
+V … 5 Ctrl+x    每個選取行的第一個數字減少 5
+V … g Ctrl+a    依序增加 1、2、3……
+V … 2g Ctrl+x   依序減少 2、4、6……
+:set nrformats=bin,hex
+```
+
+支援字元、整行、區塊及反向選取；序列由上往下處理，沒有數字的行不占用序號。
+Visual 只處理選取範圍內的數字片段。使用精確整數運算，避免 SQL 中的大整數 ID
+在 JavaScript Number 的安全範圍外被四捨五入。操作可單步復原並支援重播。
+不將小數或科學記號視為單一整數。
+
+### 手動摺疊
+
+先輸入 `:set foldmethod=manual`（或 `:set fdm=manual`），再使用：
+
+```text
+zf2j          把目前行到往下兩行建立為手動摺疊
+V … zf        摺疊選取涉及的行
+3zF           摺疊目前行起的三行
+:10,20fold    建立第 10～20 行的手動摺疊
+zd            刪除目前摺疊定義
+zD            遞迴刪除目前摺疊及其子摺疊
+zE            刪除全部手動摺疊
+:set fdl=1    設定展開層級
+:set nofen    暫時展開
+:set fen      恢復摺疊
+:set fdm=syntax  返回原有 SQL 語法摺疊
+```
+
+建立／刪除摺疊不會刪除 SQL 文字。手動範圍隨文字編輯映射；載入另一份 SQL
+會清除範圍，但保留選項。既有 `zc/zo/za`、層級與跳轉指令可操作手動摺疊。
+保留的 foldlevel 可用 `zx`／`zX` 套用到新文件。manual 模式下語言服務仍可能
+顯示摺疊欄標記，但只能關閉已建立的手動範圍。
+
+### 關閉與切換 Query Tool
+
+`:q` 要求關閉目前 Query Tool；`:wq`、`:x` 和 `ZZ` 先經由原有流程儲存，
+確認成功後才要求關閉。取消選檔、儲存失敗，或儲存期間 SQL 又被修改時，
+分頁保持開啟；`:x` 和 `ZZ` 遇到未修改內容可直接提出關閉要求。
+未儲存資料、執行中的查詢及交易提示沿用 pgAdmin 原有流程。
+`:q!` 和 `ZQ` 也會走 pgAdmin 的關閉確認，不略過這些提示。
+
+| 指令 | 行為 |
+| --- | --- |
+| `gt`／`gT` | 下一個／上一個 Query Tool |
+| `3gt` | 目前群組中的第 3 個 Query Tool |
+| `3gT` | 往前切換 3 個 Query Tool |
+| `:bn`／`:bp` | 下一個／上一個 Query Tool；可附相對次數 |
+| `:bf`／`:bl` | 第一個／最後一個 Query Tool |
+| `:b 3`／`:tabn 3` | 選擇第 3 個 Query Tool |
+| `:tabn`／`:tabp` | 下一個／上一個 Query Tool |
+
+僅在目前 dock 群組內切換，略過 Dashboard、PSQL 等其他工具；超出範圍的指定編號會顯示提示。
+
+### 保存設定與自訂 Leader
+
+到 **File → Preferences → Query Tool → Editor** 設定 **Vim configuration**
+及 **Vim leader key**。設定由 pgAdmin 保存，重新開啟 Query Tool 後套用；
+不需要磁碟上的 `.vimrc` 或 Neovim。Leader 預設為逗號 `,`。
+
+```vim
+" 一行一個設定或映射
+set nrformats=bin,hex
+set textwidth=80
+set ignorecase smartcase hlsearch incsearch
+set nowrapscan
+nnoremap <Leader>w :w<CR>
+nnoremap <Leader>q :q<CR>
+inoremap jk <Esc>
+```
+
+支援 `set`／`setlocal` 的 `textwidth`、`nrformats`、`foldmethod`、`foldlevel`、
+`foldenable`，以及本次新增的 `ignorecase`、`smartcase`、`hlsearch`、`incsearch`、
+`wrapscan` 與各自縮寫；映射支援 `nnoremap`／`vnoremap`／`inoremap`、
+`nunmap`／`vunmap`／`iunmap`／`unmap`。
+可用 `<Leader>`、`<Space>`、`<CR>`、`<Esc>`、`<Nop>` 等按鍵記法；註解需獨立一行並以 `"` 開頭。
+
+這是經驗證的設定子集，不是任意 Vimscript 執行環境。無效命令會指出行號，
+不會拿設定文字當作 SQL 執行。設定與映射限於各自編輯器，更新時會移除過期映射。
+
 ## 快捷鍵與限制
 
 - Vim 啟用時，Vim 已使用的按鍵優先。`Ctrl+f` 是翻頁；可用 `/` 搜尋，
   或使用 pgAdmin 的選單。未被 Vim 使用的 Query Tool 快捷鍵保留原有路徑。
 - Normal 模式的 `Tab` 等同 `Ctrl+i`，向前走訪跳躍清單；`Shift+Tab`
   不會誤改縮排。Insert 模式維持 pgAdmin 原有的 Tab 縮排／補全行為。
-- `,` 保留 Vim 的反向重複 `f`／`t` 搜尋功能；本分支未另外指定 Leader。
+- Leader 預設為 `,`；未設定以 Leader 開頭的映射時，逗號保留原有反向搜尋功能。
+  若設定 `,w` 等映射，逗號會成為等待後續按鍵的前綴，可用 `Esc` 取消。
 - `"+y`／`"+p` 使用引擎的系統剪貼簿支援，需要瀏覽器／Electron 提供
   Clipboard API 及允許存取；`"*` 不等同系統剪貼簿。
-- 持久化 `.vimrc`、跨 Query Tool 分頁的 Vim buffer／window 管理、`:q`／`:wq`／`ZZ`
-  及完整 Vim 外掛 API 尚未支援。EasyMotion 是外掛功能，亦未加入。
-- `zf/zd` 手動建立／刪除摺疊、`[z/]z/zj/zk` 摺疊跳轉，以及 Vim 摺疊選項尚未實作。
-  Visual 模式目前支援 `zc/zo/zC/zO`，尚未加入 Visual `za/zA`。
-- `g;`／`g,` 變更清單、Visual `g Ctrl+a`／`g Ctrl+x` 遞增序列仍待實作。
-  既有 Normal `Ctrl+a`／`Ctrl+x` 使用 JavaScript Number；不保證大整數及所有
-  `nrformats` 行為與原生 Vim 一致。
+- 可保存 Preferences 設定子集；不讀取磁碟 `.vimrc`，不提供完整 Vim 外掛 API 或 EasyMotion。
+- 分頁切換限於目前 pgAdmin 分頁群組內的 Query Tool，不控制瀏覽器分頁、其他視窗，
+  也不提供完整 Vim window 分割命令。
+- 手動摺疊按整行建立，支援手動與語法兩種方法；未提供 marker、indent、expr 等其他 foldmethod。
+- 十進位數字採任意精度，不模擬 Vim 的整數溢位；二／八／十六進位按 unsigned 64-bit 溢位處理。
+  `nrformats` 支援 `bin,hex,octal,alpha,unsigned` 及空值；不提供所有 Vim 格式選項。
 - Ex 解析仍由現有引擎提供；未宣稱完整 Vim 地址、正規表示式、Vimscript 或外部 shell 相容。
+- 引擎的暫存器與部分 `.`／巨集重播狀態仍為共用，跨編輯器操作不保證完全獨立。
 - 本專案提供編輯器內的 Vim 操作，不能據此宣稱完整 Vim／Neovim 相容。
 
+## 尚未實作／仍有差異的功能
+
+以下是目前明確的後續缺口；不是完整 Vim 相容性認證。
+
+| 功能 | 目前狀態 | 尚需處理 |
+| --- | --- | --- |
+| 變更清單完整原生選項 | 基本指令已實作 | `textwidth`／`wrapmargin`、`:keepjumps` 與持久化 |
+| Visual `Ctrl+a/x`、`g Ctrl+a/x` | 已實作 | 依選取中的整數片段處理，不是浮點運算 |
+| 原生數字格式與大整數 | 已提供精確整數及格式子集 | 十進位溢位與其他未列出的 nrformats 仍有差異 |
+| 手動摺疊 `zf/zF/zd/zD/zE` | 已實作 | 摺疊定義不隨 SQL 檔案保存，亦不是獨立 Vim 摺疊歷史 |
+| 原生摺疊選項 | 已提供常用子集 | 僅 syntax/manual；foldtext、foldcolumn、marker/indent/expr 等未提供 |
+| `:q/:wq/ZZ`、buffer／window 管理 | 已接入儲存／關閉及分頁切換 | 原有 pgAdmin 提示仍有效；完整 window/buffer 管理未提供 |
+| Ex 完整地址／命令串接／Vimscript | 部分相容 | 現有引擎解析範圍有限；不支援完整腳本環境 |
+| 持久化設定 | 已提供 Preferences 文字設定與 Leader | 不讀取 `.vimrc` 檔案；只有列出的 set 與非遞迴映射子集 |
+| 搜尋選項 | 本次補上五項本地／持久布林設定 | 不是完整 Vim 正規表示式及所有搜尋選項；預設值為保留舊行為而設 |
+| 貼上與 Insert 快捷鍵 | 本次補齊常用指令及復原分段 | 未宣稱完整 Insert／Replace 編輯命令與所有原生 paste 設定相容 |
+| Ex 空白整理／對齊 | 本次提供 `retab[!]`、`left/center/right` | 未支援 `-indentonly`、多組 Tab 停駐點或完整 Ex 格式化命令 |
+| SQL `if/af`、引數 `ia/aa` | 本次新增語法辨識子集 | 不包含任意程式語言函式、未加引號的 SQL 主體或跨函式次數 |
+
 ## 開發與驗證
+
+本次本機驗證：19 組相關套件、728 個測試通過；相關 JavaScript ESLint 與
+Python 偏好設定編譯通過。Yarn patch 已產生並更新鎖定檔；乾淨安裝由
+Linux／Windows CI 驗證。包含非遞迴映射、搜尋修補與實際 Query Tool 整合。
 
 在 `web` 目錄安裝鎖定版本並執行 Vim 與編輯器回歸測試：
 
 ```powershell
 corepack yarn install --immutable
-corepack yarn jest --runInBand --runTestsByPath regression/javascript/components/CodeMirrorVimCore.spec.js regression/javascript/components/CodeMirrorVimStatus.spec.js regression/javascript/components/CodeMirrorVimFolding.spec.js regression/javascript/components/CodeMirrorVimExLines.spec.js regression/javascript/components/CodeMirrorVimSurround.spec.js regression/javascript/components/CodeMirrorVimIntegration.spec.js regression/javascript/components/CodeMirror.spec.js regression/javascript/components/CodeMirrorCustomEditor.spec.js
+corepack yarn jest --runInBand --runTestsByPath regression/javascript/components/CodeMirrorVimCore.spec.js regression/javascript/components/CodeMirrorVimChanges.spec.js regression/javascript/components/CodeMirrorVimStatus.spec.js regression/javascript/components/CodeMirrorVimFolding.spec.js regression/javascript/components/CodeMirrorVimExLines.spec.js regression/javascript/components/CodeMirrorVimSurround.spec.js regression/javascript/components/CodeMirrorVimNumbers.spec.js regression/javascript/components/CodeMirrorVimSearch.spec.js regression/javascript/components/CodeMirrorVimPaste.spec.js regression/javascript/components/CodeMirrorVimInsert.spec.js regression/javascript/components/CodeMirrorVimInsertReplay.spec.js regression/javascript/components/CodeMirrorVimExEditing.spec.js regression/javascript/components/CodeMirrorVimTextObjects.spec.js regression/javascript/components/CodeMirrorVimPreferences.spec.js regression/javascript/components/CodeMirrorVimLifecycle.spec.js regression/javascript/sqleditor/vimQueryLifecycle.spec.js regression/javascript/components/CodeMirrorVimIntegration.spec.js regression/javascript/components/CodeMirror.spec.js regression/javascript/components/CodeMirrorCustomEditor.spec.js
 corepack yarn bundle
 ```
 

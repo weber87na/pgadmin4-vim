@@ -40,6 +40,7 @@ import usePreferences from '../../../../../preferences/static/js/store';
 import { useApplicationState } from '../../../../../settings/static/ApplicationStateProvider';
 import { connectServer, connectServerModal } from './connectServer';
 import { FileManagerUtils  } from '../../../../../misc/file_manager/static/js/components/FileManager';
+import { requestQueryFileSave, navigateQueryTab } from './vimQueryLifecycle';
 
 export const QueryToolContext = React.createContext();
 export const QueryToolConnectionContext = React.createContext();
@@ -622,12 +623,12 @@ export default function QueryToolComponent({params, pgWindow, pgAdmin, selectedN
   };
 
   useEffect(()=>{
-    const fileDone = (fileName, success=true)=>{
+    const fileDone = (fileName, success=true, dirty=false)=>{
       if(success) {
         setQtStatePartial({
           current_file: fileName
         });
-        isDirtyRef.current = false;
+        isDirtyRef.current = dirty;
         setPanelTitle(qtPanelDocker, qtPanelId, fileName, {...qtState, current_file: fileName}, isDirtyRef.current);
 
         if(isSaveToolDataEnabled('sqleditor'))eventBus.current.fireEvent(QUERY_TOOL_EVENTS.TRIGGER_SAVE_QUERY_TOOL_DATA);
@@ -650,22 +651,11 @@ export default function QueryToolComponent({params, pgWindow, pgAdmin, selectedN
           }, null, modal);
         }
       }],
-      [QUERY_TOOL_EVENTS.TRIGGER_SAVE_FILE, (isSaveAs=false)=>{
-        if(!isSaveAs && qtState.current_file) {
-          eventBus.current.fireEvent(QUERY_TOOL_EVENTS.SAVE_FILE, qtState.current_file);
-        } else {
-          let fileParams = {
-            'supported_types': ['sql', '*'],
-            'dialog_type': 'create_file',
-            'dialog_title': 'Save File',
-            'btn_primary': 'Save',
-          };
-          pgAdmin.Tools.FileManager.show(fileParams, (fileName)=>{
-            eventBus.current.fireEvent(QUERY_TOOL_EVENTS.SAVE_FILE, fileName);
-          }, null, modal);
-        }
-      }],
-      [QUERY_TOOL_EVENTS.LOAD_FILE_DONE, fileDone],
+      [QUERY_TOOL_EVENTS.TRIGGER_SAVE_FILE, (isSaveAs=false, onComplete) => requestQueryFileSave({
+        eventBus: eventBus.current, currentFile: qtState.current_file,
+        fileManager: pgAdmin.Tools.FileManager, modal,
+      }, isSaveAs, onComplete)],
+      [QUERY_TOOL_EVENTS.LOAD_FILE_DONE, (fileName, success) => fileDone(fileName, success)],
       [QUERY_TOOL_EVENTS.SAVE_FILE_DONE, fileDone],
       [QUERY_TOOL_EVENTS.QUERY_CHANGED, (isDirty)=>{
         if(isDirtyRef.current === isDirty) return;
@@ -938,6 +928,7 @@ export default function QueryToolComponent({params, pgWindow, pgAdmin, selectedN
     eol: qtState.eol,
     connection_list: qtState.connection_list,
     current_file: qtState.current_file,
+    navigateQueryTab: request => navigateQueryTab(qtPanelDocker, qtPanelId, request),
     toggleQueryTool: () => setQtStatePartial((prev)=>{
       return {
         ...prev,

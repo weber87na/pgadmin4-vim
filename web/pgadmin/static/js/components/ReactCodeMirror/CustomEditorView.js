@@ -295,7 +295,8 @@ export default class CustomEditorView extends EditorView {
       }).doc;
     }
     this.dispatch({
-      changes: { from: 0, to: this.getValue().length, insert: newValue }
+      changes: { from: 0, to: this.getValue().length, insert: newValue },
+      userEvent: 'document.replace'
     });
   }
 
@@ -373,9 +374,11 @@ export default class CustomEditorView extends EditorView {
     clearBreakpoints(this);
   }
 
-  markClean() {
-    this._cleanDoc = this.state.doc;
-    this._cleanDocEOL = this.getEOL(); // Update the initial EOL value.
+  markClean(doc=this.state.doc, lineSeparator=this.getEOL()) {
+    // Async saves may finish after another edit. Remember what was persisted,
+    // so subsequent undo/redo compares with the actual file on disk.
+    this._cleanDoc = doc;
+    this._cleanDocEOL = lineSeparator;
   }
 
   isDirty() {

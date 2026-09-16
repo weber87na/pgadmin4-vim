@@ -49,6 +49,7 @@ describe('Query editor Vim integration', () => {
   }
 
   beforeEach(() => {
+    Vim.resetVimGlobalState_();
     previousPreferences = usePreferences.getState().data;
     const editorPrefs = {
       tab_size: 4,
@@ -194,6 +195,157 @@ describe('Query editor Vim integration', () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it('routes close requests to the current Query Tool callback after reconfiguration', () => {
+    const firstClose = jest.fn();
+    const secondClose = jest.fn();
+    const updatedClose = jest.fn();
+    const first = mountEditor({onVimClose: firstClose});
+    const second = mountEditor({onVimClose: secondClose});
+    ex(first.view, 'q');
+    expect(firstClose).toHaveBeenCalledWith(first.view);
+    expect(secondClose).not.toHaveBeenCalled();
+    first.rerender({onVimClose: updatedClose, vimShowStatus: false});
+    ex(first.view, 'q');
+    expect(updatedClose).toHaveBeenCalledWith(first.view);
+    ex(second.view, 'q');
+    expect(secondClose).toHaveBeenCalledWith(second.view);
+  });
+
+  it('keeps the Query Tool open until its save callback confirms success', async () => {
+    let complete;
+    const close = jest.fn();
+    const save = jest.fn(() => new Promise(resolve => { complete = resolve; }));
+    const editor = mountEditor({onVimSave: save, onVimClose: close});
+    ex(editor.view, 'wq');
+    expect(save).toHaveBeenCalledWith(editor.view);
+    expect(close).not.toHaveBeenCalled();
+    await act(async () => { complete(false); });
+    expect(close).not.toHaveBeenCalled();
+    ex(editor.view, 'wq');
+    await act(async () => { complete(true); });
+    expect(close).toHaveBeenCalledWith(editor.view);
+  });
+
+  it('integrates Visual numeric sequences and exact integers in the Query Tool', () => {
+    const editor = mountEditor({value: '9007199254740992\n9007199254740992\n9007199254740992'});
+    keys(editor.view, ['g', 'g', 'V', 'G', 'g', '<C-a>']);
+    expect(editor.view.getValue()).toBe('9007199254740993\n9007199254740994\n9007199254740995');
+    keys(editor.view, ['u']);
+    expect(editor.view.getValue()).toBe('9007199254740992\n9007199254740992\n9007199254740992');
+  });
+
+  it.each(['readonly', 'disabled'])('protects numeric edits when the Query Tool is %s', property => {
+    const editor = mountEditor({value: '10\n20', [property]: true});
+    keys(editor.view, ['<C-a>', 'V', 'G', 'g', '<C-x>']);
+    expect(editor.view.getValue()).toBe('10\n20');
+  });
+
+  it('applies and removes saved mappings without changing another Query Tool', async () => {
+    const first = mountEditor({value: 'alpha', vimConfig: 'nnoremap <Leader>d x'});
+    const second = mountEditor({value: 'beta'});
+    await act(async () => {});
+    keys(first.view, [',', 'd']);
+    expect(first.view.getValue()).toBe('lpha');
+    keys(second.view, [',', 'd', '<Esc>']);
+    expect(second.view.getValue()).toBe('beta');
+    first.rerender({vimConfig: ''});
+    await act(async () => {});
+    keys(first.view, [',', 'd', '<Esc>']);
+    expect(first.view.getValue()).toBe('lpha');
+  });
+
+  it('keeps persistent search options and patterns local across status rerenders', async () => {
+    const first = mountEditor({value: 'foo FOO foo', vimConfig: 'set noic nohls'});
+    const second = mountEditor({value: 'bar BAR bar'});
+    await act(async () => {});
+    const firstCM = getCM(first.view);
+    keys(first.view, ['/']);
+    let input = first.view.dom.querySelector('.cm-vim-panel input');
+    fireEvent.input(input, {target: {value: 'foo'}});
+    fireEvent.keyUp(input, {key: 'o', keyCode: 79});
+    expect(first.view.state.selection.main.head).toBe(8);
+    first.rerender({vimShowStatus: false});
+    expect(getCM(first.view)).toBe(firstCM);
+    expect(first.view.dom.querySelector('.cm-vim-panel input')).toBe(input);
+    fireEvent.keyDown(input, {key: 'Enter', keyCode: 13});
+    expect(first.view.state.selection.main.head).toBe(8);
+    expect(Vim.getOption('ic', firstCM)).toBe(false);
+    expect(Vim.getOption('hls', firstCM)).toBe(false);
+
+    keys(second.view, ['/']);
+    input = second.view.dom.querySelector('.cm-vim-panel input');
+    fireEvent.input(input, {target: {value: 'bar'}});
+    fireEvent.keyDown(input, {key: 'Enter', keyCode: 13});
+    expect(second.view.state.selection.main.head).toBe(4);
+    expect(Vim.getOption('ic', getCM(second.view))).toBe(true);
+    keys(first.view, ['n']);
+    expect(first.view.state.selection.main.head).toBe(0);
+    first.rerender({vimConfig: 'set ic noscs'});
+    await act(async () => {});
+    keys(first.view, ['n']);
+    expect(first.view.state.selection.main.head).toBe(4);
+    keys(second.view, ['n']);
+    expect(second.view.state.selection.main.head).toBe(8);
+  });
+
+  it('integrates SQL argument text objects with the Query Tool SQL language', () => {
+    const original = 'SELECT fn(first, second, third);';
+    const editor = mountEditor({value: original});
+    act(() => editor.view.dispatch({selection: {anchor: original.indexOf('second')}}));
+    keys(editor.view, ['d', 'a', 'a']);
+    expect(editor.view.getValue()).toBe('SELECT fn(first, third);');
+    keys(editor.view, ['u']);
+    expect(editor.view.getValue()).toBe(original);
+  });
+
+  it('routes physical Insert Control-y through the new shortcut after reconfiguration', () => {
+    const editor = mountEditor({value: 'abc\n'});
+    keys(editor.view, ['G', 'i']);
+    fireEvent.keyDown(editor.view.contentDOM, {key: 'y', code: 'KeyY', keyCode: 89, ctrlKey: true});
+    expect(editor.view.getValue()).toBe('abc\na');
+    editor.rerender({vimShowStatus: false});
+    fireEvent.keyDown(editor.view.contentDOM, {key: 'y', code: 'KeyY', keyCode: 89, ctrlKey: true});
+    expect(editor.view.getValue()).toBe('abc\nab');
+    expect(getCM(editor.view).state.vim.insertMode).toBe(true);
+    fireEvent.keyDown(editor.view.contentDOM, {key: 'Escape', code: 'Escape', keyCode: 27});
+    expect(getCM(editor.view).state.vim.insertMode).toBe(false);
+  });
+
+  it('uses Query Tool indentation preferences for retab and keeps it one undoable edit', () => {
+    const original = '\tSELECT 1;\nSELECT\t2;';
+    const editor = mountEditor({value: original});
+    ex(editor.view, 'retab');
+    expect(editor.view.getValue()).toBe('    SELECT 1;\nSELECT  2;');
+    keys(editor.view, ['u']);
+    expect(editor.view.getValue()).toBe(original);
+    editor.rerender({disabled: true});
+    ex(editor.view, 'retab');
+    expect(editor.view.getValue()).toBe(original);
+  });
+
+  it('creates manual folds in a read-only Query Tool and clears them on document replacement', () => {
+    const editor = mountEditor({value: 'one\ntwo\nthree\nfour', readonly: true});
+    ex(editor.view, 'set fdm=manual');
+    keys(editor.view, ['3', 'z', 'F']);
+    expect(foldedRanges(editor.view.state).size).toBe(1);
+    expect(editor.view.getValue()).toBe('one\ntwo\nthree\nfour');
+    editor.rerender({vimShowStatus: false});
+    expect(foldedRanges(editor.view.state).size).toBe(1);
+    editor.rerender({value: 'new\nquery'});
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+    keys(editor.view, ['z', 'M']);
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+  });
+
+  it('supports Tab as both a mapping target and a configurable physical key', () => {
+    const editor = mountEditor({vimConfig: 'nnoremap Q <Tab>'});
+    keys(editor.view, ['G', '<C-o>', 'Q']);
+    expect(editor.view.getCursor().line).toBe(2);
+    editor.rerender({vimConfig: 'nnoremap <Tab> x'});
+    fireEvent.keyDown(editor.view.contentDOM, {key: 'Tab', code: 'Tab', keyCode: 9});
+    expect(editor.view.getValue()).toBe('SELECT 1;\nELECT 2;');
+  });
+
   it('keeps application function keys available and gives Vim ownership of Normal keys', () => {
     const runQuery = jest.fn(() => true);
     const plainJ = jest.fn(() => true);
@@ -275,6 +427,41 @@ describe('Query editor Vim integration', () => {
     keys(editor.view, ['z', 'v']);
     expect(foldedRanges(editor.view.state).size).toBe(0);
     expect(editor.view.getValue()).toBe(sql);
+  });
+
+  it('retains the change list across preferences and resets it when loading another query', () => {
+    const editor = mountEditor();
+    keys(editor.view, ['x', '2', 'G', 'x']);
+    editor.rerender({vimShowStatus: false});
+    keys(editor.view, ['2', 'g', ';']);
+    expect(editor.view.state.selection.main.head).toBe(0);
+    editor.rerender({value: 'SELECT another;'});
+    keys(editor.view, ['g', ';']);
+    expect(editor.view.dom.textContent).toContain('Change list is empty');
+    expect(editor.view.getValue()).toBe('SELECT another;');
+  });
+
+  it('records Ex copy edits in the Query Tool change list', () => {
+    const editor = mountEditor();
+    ex(editor.view, '1copy $');
+    keys(editor.view, ['g', 'g', 'g', ';']);
+    expect(editor.view.state.selection.main.head).toBeGreaterThan(0);
+    ex(editor.view, 'changes');
+    expect(editor.view.dom.querySelector('pre').textContent).toContain('SELECT');
+  });
+
+  it('retains temporary fold snapshots across preferences and clears them on query replacement', () => {
+    const sql = 'BEGIN\n  SELECT 1;\n  SELECT 2;\nEND;';
+    const editor = mountEditor({value: sql});
+    keys(editor.view, ['z', 'M', 'z', 'n']);
+    expect(foldedRanges(editor.view.state).size).toBe(0);
+    editor.rerender({vimShowStatus: false});
+    keys(editor.view, ['z', 'N']);
+    expect(foldedRanges(editor.view.state).size).toBe(1);
+    keys(editor.view, ['z', 'n']);
+    editor.rerender({value: sql + '\nSELECT 3;'});
+    keys(editor.view, ['z', 'N']);
+    expect(foldedRanges(editor.view.state).size).toBe(0);
   });
 
 });
